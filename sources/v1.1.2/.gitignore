@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------
+# Repo root:  E:\download\app\Check
+# Tracked  :  MoreCheck/  (source, gradle wrapper, keystore)
+# Ignored  :  _toolchain/, build outputs, machine-local config, credentials
+# Published:  APK 走 GitHub Releases，不入库（见 README「版本回溯（Git）」）
+# ---------------------------------------------------------------------------
+
+# ---- Local toolchain (JDK 17 + Gradle 8.13 archives and extracted copies) ----
+/_toolchain/
+
+# ---- Gradle / Android build outputs ----------------------------------------
+.gradle/
+build/
+*/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ---- Machine-local SDK location (sdk.dir differs per machine) --------------
+local.properties
+
+# ---- 签名凭据：绝不入库 ----------------------------------------------------
+# keystore.properties 含签名口令，keystore/ 含私钥。
+# 两者仅本地保留，仓库外单独备份；换机器需手动带过去。
+# 注意：密钥库一旦泄露，可被用于伪造同签名证书的 APK。
+keystore.properties
+keystore/
+*.jks
+*.keystore
+
+# ---- IDE / editor ----------------------------------------------------------
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.vscode/
+*.swp
+*~
+
+# ---- OS --------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Logs / crash dumps / misc --------------------------------------------
+*.log
+*.hprof
+
+# ---- 发布产物：APK 走 GitHub Releases，不入库 ------------------------------
+# 仅忽略仓库根目录下按版本命名的归档 APK；app/build/ 已被上面的 build/ 规则忽略。
+/MoreCheck/*.apk

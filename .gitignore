@@ -1,0 +1,24 @@
+# 构建产物与本地配置
+**/build/
+**/.gradle/
+**/local.properties
+**/.idea/
+*.iml
+
+# 签名密钥与口令，永不入库
+*.jks
+*.keystore
+keystore.properties
+/keystore/
+
+# 不属于公开交付物的本地文件
+.workbuddy/
+/original-apks/
+/scripts/rebrand.py
+sources/*/README.md
+sources/*/HANDOVER.md
+sources/*/dist/
+sources/*/MoreCheck/README.md
+
+.DS_Store
+Thumbs.db

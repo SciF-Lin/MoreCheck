@@ -1,0 +1,53 @@
+# ---------------------------------------------------------------------------
+# Repo root:  E:\download\app\Check
+# Tracked  :  MoreCheck/  (source, gradle wrapper, keystore)
+# Ignored  :  _toolchain/, build outputs, machine-local config, credentials
+# Published:  APK 走 GitHub Releases，不入库（见 README「版本回溯（Git）」）
+# ---------------------------------------------------------------------------
+
+# ---- Local toolchain (JDK 17 + Gradle 8.13 archives and extracted copies) ----
+/_toolchain/
+
+# ---- Gradle / Android build outputs ----------------------------------------
+.gradle/
+build/
+*/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ---- Machine-local SDK location (sdk.dir differs per machine) --------------
+local.properties
+
+# ---- 签名凭据 --------------------------------------------------------------
+# keystore/morecheck.jks 按决策**入库**（本仓库必须保持 Private）。
+# keystore.properties 含签名口令，不入库；口令值记录在 README「签名」一节。
+# 新增其它密钥库时请按路径显式忽略，勿使用 *.jks 通配符（会覆盖需要入库的文件）。
+keystore.properties
+!keystore/morecheck.jks
+!MoreCheck/keystore/morecheck.jks
+
+# ---- IDE / editor ----------------------------------------------------------
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.vscode/
+*.swp
+*~
+
+# ---- OS --------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Logs / crash dumps / misc --------------------------------------------
+*.log
+*.hprof
+
+# ---- 发布产物：APK 走 GitHub Releases，不入库 ------------------------------
+# 仅忽略按版本命名的归档 APK；app/build/ 已被上面的 build/ 规则忽略。
+/MoreCheck/*.apk
+# 交付目录里的 APK 同理不入库；install.ps1 与交付说明仍可入库。
+/dist/*.apk

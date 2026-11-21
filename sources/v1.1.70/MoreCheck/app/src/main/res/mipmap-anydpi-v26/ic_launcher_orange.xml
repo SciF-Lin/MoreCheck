@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    「图标更改」的橙色（AccentColor.ORANGE #FB8C00）那套自适应图标。
+
+    结构与另外两套完全一致，只有背景色资源名不同。
+    橙是这个色系里**最容易被误认成「应用主题色变成橙色」**的一套，
+    但它只改桌面图标的背景，主题色仍由「设置 → 主题色」独立控制——
+    这也是本功能页面上要写清「图标更改只影响桌面图标」的原因。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_orange_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

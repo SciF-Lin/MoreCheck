@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Android 13+ notification permission (runtime request). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 12+ exact alarm permission for daily reminders. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Re-schedule reminders after reboot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application
+        android:name=".MoreCheckApp"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MoreCheck">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.MoreCheck">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Fires the actual reminder notification at the scheduled time. -->
+        <receiver
+            android:name=".reminder.ReminderReceiver"
+            android:exported="false" />
+
+        <!-- Date/time changed events (midnight rollover). -->
+        <receiver
+            android:name=".reminder.DateChangeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Re-schedule reminders and roll the day over after reboot. -->
+        <receiver
+            android:name=".reminder.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

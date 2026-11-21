@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        深色模式下的窗口底色。
+        与 Theme.kt 的 `NeutralDark.background`（#111111）保持一致，
+        这样冷启动时不会先闪一下浅色（需求 bug2）。
+
+        只在 `values-night` 覆盖：用户选的是「跟随系统」，系统切深色时才需要深底。
+    -->
+    <color name="window_background">#111111</color>
+</resources>

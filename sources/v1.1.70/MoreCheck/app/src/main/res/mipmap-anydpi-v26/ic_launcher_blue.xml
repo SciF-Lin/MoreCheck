@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    「图标更改」的蓝色（AccentColor.BLUE #1E88E5）那套自适应图标。
+
+    与默认那套（ic_launcher.xml）**唯一的差别就是背景色**：
+    - 前景仍然指向现成的 `@drawable/ic_launcher_foreground`（那张 432×432 的 PNG），
+      因此新增一套图标**不需要任何新的二进制图片资源**，也不可能出现「换了图标但图形画风变了」；
+    - 背景色取应用主题色里已有的蓝色，见 `values/colors.xml` 的 `ic_launcher_blue_background`。
+
+    为什么是「另建一个文件」而不是「换掉 ic_launcher.xml 里引用的颜色」：
+    `res/values-night/colors.xml` 之类的资源限定符会让同一个资源名在不同配置下取到不同值，
+    而图标是**安装期由系统解析并缓存**的——同一套图标必须在所有配置下都稳定，
+    所以每套图标各自引一个**独立的颜色资源名**，互不干扰。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_blue_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

@@ -1,0 +1,466 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Android 13+ notification permission (runtime request). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 12+ exact alarm permission for daily reminders. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Re-schedule reminders after reboot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 「扫一扫」需要相机（运行时申请）。这是该功能唯一的硬件权限。 -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 「实验室 → 天气」按需求用系统定位算当地天气（运行时申请）。 -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- 「搜一搜」内嵌网页与「实验室 → 天气」查询需要联网。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 联网失败时区分「没网」与「服务出错」。 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+        「记事本 → 悬浮窗」需要把内容画在别的应用之上（v1.1.68 需求 2）。
+        这是**特殊权限**，不能用运行时对话框申请，只能跳系统设置页让用户手动开
+        （见 `ui/lab/NotebookOverlayService.kt` 里 `NotebookOverlay.open` 的说明）。
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!--
+        前台 Service 权限（「记事本 → 悬浮窗」用）。
+
+        ## 为什么必须有 FOREGROUND_SERVICE
+        Android 9+（API 28）起，声明了 `foregroundServiceType` 的服务若没有这个权限，
+        调 `startForeground` 会抛 `SecurityException`。
+
+        ## 为什么还需要 FOREGROUND_SERVICE_SPECIAL_USE
+        Android 14+（API 34）起，前台服务必须声明**类型**，且每种类型对应一个独立权限。
+        本功能不属于任何平台预置类型（不是媒体播放、不是定位、不是数据同步），
+        平台为这种情形提供的出口就是 `specialUse`。
+
+        ⚠️ 取舍与风险（已知并接受）：`specialUse` 在 **Google Play 上架时需要提交用途说明
+        并接受审核**。本项目是自用 / 内部分发（见 `dist/install.ps1`），不走 Play 审核流程，
+        因此用它最贴切。若将来上架被拒，替代方案是语义牵强的 `dataSync`（同样要审核），
+        或把悬浮窗降级为"与 Activity 同生命周期"——两者都不如现在干净。
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- 没有相机的设备（少数模拟器/平板）仍可安装，扫码入口会给出提示而不是崩溃。 -->
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
+    <!-- 定位同理：没有 GPS 的设备仍可安装，天气会退化为「无法定位」提示。 -->
+    <uses-feature
+        android:name="android.hardware.location"
+        android:required="false" />
+
+    <application
+        android:name=".MoreCheckApp"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MoreCheck">
+
+        <!--
+            ⚠️ 本 Activity **刻意不再声明 LAUNCHER intent-filter**（需求：图标更改）。
+
+            桌面图标改由下面 4 个 `activity-alias` 提供，每个 alias 一套内置图标；
+            `.MainActivity` 自己若还留着 LAUNCHER 过滤器，桌面就会**同时出现两个图标**
+            （真实 Activity 一个 + 当时启用的 alias 一个），这正是「图标测试」最典型的翻车方式。
+            所以 LAUNCHER 过滤器整体搬到 alias 上，本 Activity 只剩「被 alias 拉起」这一个角色。
+
+            ⚠️ 但 `android:exported="true"` **必须保留**，这不是可选项：
+
+            `dist/install.ps1` 用 `am start -n com.morecheck/.MainActivity` 在装完后启动应用。
+            `am` 是**以 shell 身份**发起的跨应用启动，属于外部调用；
+            组件未导出时会被系统直接拒绝
+            （`Permission Denial: starting Intent { ... } not exported from uid ...`），
+            安装脚本最后那一步就会失败。所以这里「去掉 LAUNCHER 过滤器」与
+            「去掉 exported」是**两件完全不同的事**，前者是需求，后者会让 CI 脚本挂掉。
+
+            `android:label` / `android:theme` 保留在 Activity 上：`makeAlias()` 会把这两项
+            继承给 alias。下面每个 alias **仍然显式写了 `android:label`**：
+            它让每个 alias 自解释（不必回头去 Activity 上确认应用名是什么），
+            也防止日后有人把 label 从 Activity 上拿掉、导致桌面图标突然没名字。
+            `android:theme` 则**不重复**——alias 上写 theme 没有任何额外作用，
+            只是把同一个值放到了两处。
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.MoreCheck"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!--
+            ── windowSoftInputMode 为什么必须显式写 adjustResize（v1.1.70）──────────
+
+            ## 症状（真机 25060RK16C / HyperOS + 百度输入法小米版实测）
+
+            智能体页点输入框，键盘弹出后**输入栏悬在屏幕中部**、与键盘之间空出
+            近半屏——「输入框异常弹起过高」。三个版本换 inset 写法都治不了它
+            （见 AgentChatScreen 的 ChatInputBar 注释），因为真正的根因在窗口层：
+
+            ## 根因：pan 与 inset 双重补偿
+
+            不写 windowSoftInputMode 时，该 ROM 对 edge-to-edge 窗口回落到
+            **adjustPan**（dumpsys 实测 `sim={adjust=pan}`）。于是出现两条让位路径
+            同时生效：
+            ① adjustPan 把整个窗口向上平移（视觉上内容顶到状态栏后面）；
+            ② 输入法窗口自身的 content inset（实测 1561px，几乎整屏——百度输入法
+               小米版以全屏窗口 + 透明底实现，Compose 读到的 ime inset 就是这么大）
+               又让 Compose 按 safeDrawing 再让一次位。
+            平移之后 inset 依旧非零，两次补偿叠加，输入栏正好悬在键盘上方一大截。
+
+            ## adjustResize 为什么是根治
+
+            adjustResize 下系统**不再平移窗口**，让位完全走 insets 派发这一条路：
+            Compose 的 `WindowInsets.ime` / `safeDrawing` 拿到的是唯一事实源，
+            输入栏随键盘高度精确贴合，键盘收起后 inset 回落到导航栏高度，
+            底部按钮也不会被导航条压住（v1.1.69 冒烟测试修的另一头）。
+            上一版在 inset 写法上换三种方案都失败，正是因为没有关掉 pan 这条
+            并行的旧路径——结构性消除坏状态，而不是按时机补偿（与 5.1 同一教训）。
+        -->
+
+        <!--
+            ── 内置桌面图标（4 套，用 activity-alias 做真实切换）────────────────────────
+
+            ## 为什么必须用 alias，而不能直接换 `android:icon`
+
+            桌面图标是**写在 manifest 里的资源引用**，由系统 PackageManager 在安装 / 组件状态变更时
+            解析并缓存。应用运行时**无法**把自己或某个 Activity 的图标改成一张新图片——
+            这是 Android 的硬限制，没有任何 API 能覆盖它。
+            于是「换图标」唯一可行的官方做法就是：**预先把几套图标都声明好**（每套一个 alias），
+            运行时只切换**哪一个是启用的**（`PackageManager.setComponentEnabledSetting`），
+            系统随即按当前启用的组件重新解析桌面图标。
+
+            ⚠️ 这条限制也直接决定了需求里「自定义上传的图片」的边界：
+            用户自传的图**永远不可能**成为桌面图标（它不是资源、没有资源 id），
+            所以自传图只用做**应用内显示**（见 `data/AppIconRepository` 与 `ui/lab/IconPickerScreen`）。
+
+            ## 四套图标
+
+            - `.icon.Default`：**默认**，用现成的 `@mipmap/ic_launcher`（黑色底），
+              与改造前的图标**逐字节相同**——「一键恢复默认」恢复的就是它，不能有一丝差别；
+            - 蓝 / 紫 / 橙三套复用**同一个前景**（`drawable-xxxhdpi/ic_launcher_foreground.png`），
+              只换自适应图标的**背景色**，色值取自应用主题色 `AccentColor` 里已有的蓝 `#1E88E5`、
+              紫 `#7E57C2`、橙 `#FB8C00`。因此**不需要任何新的二进制图片资源**，
+              也不可能出现「换了图标但前景画风不一致」的割裂。
+
+            ## `enabled` 的初始值就是「默认那套」
+
+            只有 `.icon.Default` 是 `enabled="true"`，其余三套 `enabled="false"`。
+            这个「安装后的初始状态」必须与 `SettingsRepository` 里图标设置的默认值
+            （`SettingsRepository.DEFAULT_ICON_STYLE` = `"default"`）**保持一致**，
+            否则首次进页面会看到「选中的是蓝色、桌面上是默认图标」这种自相矛盾的回显。
+
+            ## ⚠️ 每个 alias 都必须写 `android:roundIcon`
+
+            已核对平台源码（`ParsedActivityUtils.parseActivityAlias` →
+            `ParsedMainComponentUtils.parseMainComponent` → `ParsedComponentUtils.parseComponent`）：
+            alias 的图标取自**它自己的属性数组**，逻辑是
+
+            ```
+            roundIconVal = useRoundIcon ? array.getResourceId(roundIconAttr, 0) : 0
+            if (roundIconVal != 0) component.setIcon(roundIconVal)
+            else if (iconVal != 0) component.setIcon(iconVal)
+            ```
+
+            也就是说：**alias 自己的 `roundIcon` 优先，其次才是 alias 自己的 `icon`**，
+            两者都没写才会回落到 `makeAlias()` 从目标 `.MainActivity` 继承来的图标。
+            所以这里只写 `icon` 不写 `roundIcon` 时，在**会查询 roundIcon 的桌面**上
+            （三星、部分 EMUI/MIUI）并不会取到 alias 的 `icon`，而是回到继承来的那一个 ——
+            表现为「应用内显示已切到蓝色，桌面还是默认图标」，会被当成切换失败。
+
+            三套彩色 alias 的 `roundIcon` 直接**复用同一份自适应图标 XML**，
+            而不是再建 `ic_launcher_blue_round.xml`：自适应图标本身就是
+            「前景 + 背景」，由桌面按自己的形状（圆 / 方 / 水滴）去裁，
+            圆形与方形两份文件内容会**逐字节相同**，多出来的文件只是重复。
+
+            只有 `.icon.Default` 的 `roundIcon` 指向 `@mipmap/ic_launcher_round`，
+            与改造前完全一致——恢复默认必须恢复到这个字节级相同的状态。
+
+            ## `android:exported` 为什么必写
+
+            targetSdk 31+ 起，**任何带 intent-filter 的组件**都必须显式声明 `android:exported`，
+            否则安装期就会报 `android:exported needs to be explicitly specified`。
+            alias 带了 LAUNCHER 过滤器，所以四个都写 `true`——它本来就是要被桌面拉起的。
+
+            ⚠️ 标签一律用 `@string/app_name`：本功能只换**图标**，不改应用名。
+            `theme` 则**有意不写**在 alias 上——`makeAlias()` 会把目标 `.MainActivity`
+            的 theme 继承下来，重复声明只会让同一个值有两个来源。
+        -->
+        <activity-alias
+            android:name=".icon.Default"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".icon.Blue"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_blue"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_blue"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".icon.Purple"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_purple"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_purple"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".icon.Orange"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_orange"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_orange"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!--
+            ── 新增四套内置图标（v1.1.69 需求 2b：手绘前景 + 新背景色）──────────────
+
+            ## 与上面四套的关系
+
+            上面四套是「一张前景 PNG + 四种背景色」；新增的四套是
+            **四个手绘矢量前景 + 四个新背景色**，与它们并列、各占一个 alias
+            （第九套「杉树」在下面单独一段）。
+            为什么还是 alias 机制、`<application>` 的 `android:icon` 为什么不动：
+            见本文件上方那段长注释（系统只认 manifest 里的图标资源，
+            运行期唯一能改的只有"哪个组件是启用的"）。
+
+            ## 四个 alias 与资源的对照
+
+            · `.icon.Check`：`@mipmap/ic_launcher_check`，前景 `@drawable/ic_icon_fore_check`，底色 `#00ACC1`
+            · `.icon.Star`：`@mipmap/ic_launcher_star`，前景 `@drawable/ic_icon_fore_star`，底色 `#37474F`
+            · `.icon.Flame`：`@mipmap/ic_launcher_flame`，前景 `@drawable/ic_icon_fore_flame`，底色 `#E53935`
+            · `.icon.Leaf`：`@mipmap/ic_launcher_leaf`，前景 `@drawable/ic_icon_fore_leaf`，底色 `#43A047`
+
+            ## ⚠️ `enabled="false"` 与 `roundIcon` 一个都不能少
+
+            - `enabled="false"`：安装后的初始状态必须只有 `.icon.Default` 是启用的，
+              否则桌面会**同时出现多个图标**（每个启用的 LAUNCHER alias 都是一个图标），
+              而且与 `SettingsRepository.DEFAULT_ICON_STYLE`（`"default"`）矛盾。
+            - `android:roundIcon`：alias 的图标取自**它自己的属性数组**，
+              `roundIcon` 优先于 `icon`；漏写时在查询 roundIcon 的桌面（三星 / 部分 EMUI）
+              上会回落到从 `.MainActivity` 继承的图标，表现为"应用内切了、桌面没变"。
+              这四个 alias 的 `roundIcon` 与 `icon` 指向**同一个自适应图标 XML**：
+              自适应图标由桌面按自己的形状去裁，圆形与方形两份文件内容会逐字节相同。
+            - 类名的**首字母大写**不是风格问题：`AppIconRepository.aliasComponentOf`
+              的兜底路径按 id 首字母大写拼类名，改名会让那条路径失效。
+        -->
+        <activity-alias
+            android:name=".icon.Check"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_check"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_check"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".icon.Star"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_star"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_star"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".icon.Flame"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_flame"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_flame"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".icon.Leaf"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_leaf"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_leaf"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!--
+            ── 第九套：杉树（复用「一个木函」Logo 素材，v1.1.69 需求 2b）────────────
+
+            ## 与其它套唯一的差别：前景是位图
+
+            前四套（黑/蓝/紫/橙）用同一张 `ic_launcher_foreground.png`，
+            中间四套（对勾/星标/火焰/叶片）用四个手绘 VectorDrawable，
+            本套用 `@drawable/ic_fore_tree`——一张 432×432 的透明底 PNG
+            （拷自「一个木函」APK 的品牌 Logo，见 `ic_launcher_tree.xml` 里的来源与授权说明）。
+
+            ⚠️ 它的背景色**必须深**：树本体是近白的青绿渐变，
+            配白底实测只有 1.35 : 1、桌面几乎看不见（已改为 Teal 900 `#004D40`）。
+            换前景素材时务必重新量一次前景明度，不要沿用别的套的背景色。
+
+            ## ⚠️ 第三方素材的边界（留给未来改动者）
+
+            该素材属第三方应用。本项目自用 / 内部分发，按"个人学习参考"使用；
+            **若要公开分发必须先替换或取得授权**。这条提醒在
+            `res/mipmap-anydpi-v26/ic_launcher_tree.xml` 的 KDoc 里也写了一份，
+            两处都在，避免只看其中一处的人漏掉。
+
+            ## enabled / roundIcon / exported
+
+            与前四套新增图标完全同口径，理由见上面那段长注释，不再重复：
+            `enabled="false"`（初始只启用默认套）、`roundIcon` 必写、`exported="true"`（带 LAUNCHER 过滤器）。
+        -->
+        <activity-alias
+            android:name=".icon.Tree"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_tree"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_tree"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!--
+            拍照临时文件的 FileProvider（「智能体 → 拍照」用，v1.1.69 新增）。
+
+            ## 为什么必须有它
+
+            系统相机（`ActivityResultContracts.TakePicture`）要把拍好的照片写进我们给的
+            Uri。targetSdk 36 下给 `file://` 会触发 StrictMode 的
+            `FileUriExposedException`，相机进程直接崩，所以必须走 `content://`——
+            而 content:// 的临时文件授权只能由 FileProvider 授予
+            （`grantUriPermission` 由契约内部完成，manifest 侧只需要正确声明）。
+
+            ## 为什么只暴露 cacheDir 的一个子目录
+
+            `cache_paths` 只映射 `cacheDir/` 下我们自己创建的拍照文件（见
+            `ui/agent/AgentChatScreen` 的 `ai_camera_*.jpg`）。FileProvider 的
+            暴露面越大越危险：把 `filesDir/` 整个映射出去，等于把聊天历史、
+            DataStore、甚至密钥库都放进可被临时授权的路径里。这里按
+            「最小可用」原则只放 cacheDir（系统随时可回收，本就不存持久数据）。
+
+            exported="false" 由 FileProvider 自身实现保证（它对所有调用方校验权限），
+            但显式写出来更直观；authority 必须与代码里
+            `FileProvider.getUriForFile(context, "<packageName>.fileprovider", ...)`
+            的第二个参数**逐字节一致**。
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- Fires the actual reminder notification at the scheduled time. -->
+        <receiver
+            android:name=".reminder.ReminderReceiver"
+            android:exported="false" />
+
+        <!-- Date/time changed events (midnight rollover). -->
+        <receiver
+            android:name=".reminder.DateChangeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Re-schedule reminders and roll the day over after reboot. -->
+        <receiver
+            android:name=".reminder.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+            「记事本 → 悬浮窗」的前台 Service（v1.1.68 需求 2）。
+
+            ## exported="false"
+            它只由本应用自己用**显式 Intent**启动（见 `NotebookOverlay.open`），
+            没有任何外部调用方，因此不导出。若导出，任何应用都能拉起它——
+            那等于把"在别人屏幕上画窗口"的能力开放给第三方，是明确的安全问题。
+
+            ## android:foregroundServiceType="specialUse"
+            Android 14+（API 34）**强制**要求前台服务声明类型，缺了它
+            `startForeground` 会抛 `MissingForegroundServiceTypeException`。
+            ⚠️ 这里声明的类型必须与代码里传给 `ServiceCompat.startForeground` 的
+            `ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE` **完全一致**，
+            否则抛 `InvalidForegroundServiceTypeException`。
+
+            ## <property> 说明用途
+            平台要求 `specialUse` 类型的服务提供 `PROPERTY_SPECIAL_USE_FGS_SUBTYPE`
+            说明"到底特殊在哪"。这既是给审核人看的，也是该类型存在的意义；
+            不写的话部分系统版本会直接拒绝该服务。取值是一句简短说明。
+        -->
+        <service
+            android:name=".ui.lab.NotebookOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="用户主动开启「悬浮窗」后，把记事本当前内容显示为可拖动的常驻小窗" />
+        </service>
+    </application>
+</manifest>

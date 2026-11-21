@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    「图标更改」的紫色（AccentColor.PURPLE #7E57C2）那套自适应图标。
+
+    结构与 `ic_launcher_blue.xml` 完全一致，只有背景色资源名不同——
+    这样三套彩色图标之间是**逐字段可对比**的，出问题时一眼能看出是哪一套的背景写错了。
+    取紫色而不是青色 / 粉色：紫在深浅底上都与前景（米白 + 黑）保持足够对比，
+    且与应用的三种主色调（绿 / 蓝 / 橙）远到不容易看混。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_purple_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>
