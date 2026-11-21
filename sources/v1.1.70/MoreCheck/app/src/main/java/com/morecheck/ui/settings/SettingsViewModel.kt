@@ -65,10 +65,6 @@ class SettingsViewModel(private val settings: SettingsRepository) : ViewModel() 
     private val _cameraEnabled = MutableStateFlow(false)
     val cameraEnabled = _cameraEnabled.asStateFlow()
 
-    /** 定位：是否允许「实验室 → 天气」读取所在城市。 */
-    private val _locationEnabled = MutableStateFlow(false)
-    val locationEnabled = _locationEnabled.asStateFlow()
-
     /** 通知：每日提醒推送的总开关；关掉后 `ReminderReceiver` 不再弹通知。 */
     private val _notificationEnabled = MutableStateFlow(false)
     val notificationEnabled = _notificationEnabled.asStateFlow()
@@ -118,7 +114,6 @@ class SettingsViewModel(private val settings: SettingsRepository) : ViewModel() 
                 _loginPromptEnabled.value = settings.loginPromptEnabled.first()
                 _momentsBadgeEnabled.value = settings.momentsBadgeEnabled.first()
                 _cameraEnabled.value = settings.cameraEnabled.first()
-                _locationEnabled.value = settings.locationEnabled.first()
                 _notificationEnabled.value = settings.notificationEnabled.first()
                 _timerSoundEnabled.value = settings.timerSoundEnabled.first()
                 _timerSoundUri.value = settings.timerSoundUri.first()
@@ -176,12 +171,6 @@ class SettingsViewModel(private val settings: SettingsRepository) : ViewModel() 
         if (_cameraEnabled.value == enabled) return
         _cameraEnabled.value = enabled
         viewModelScope.launch { settings.setPermissionEnabled(AppPermission.CAMERA.id, enabled) }
-    }
-
-    fun setLocationEnabled(enabled: Boolean) {
-        if (_locationEnabled.value == enabled) return
-        _locationEnabled.value = enabled
-        viewModelScope.launch { settings.setPermissionEnabled(AppPermission.LOCATION.id, enabled) }
     }
 
     fun setNotificationEnabled(enabled: Boolean) {

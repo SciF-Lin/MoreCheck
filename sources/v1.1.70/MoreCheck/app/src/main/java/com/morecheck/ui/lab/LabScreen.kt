@@ -72,7 +72,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * 宫格里现在有两类条目，用 [target] 区分：
  * - [LabTarget.Placeholder]：**尚未实现**的功能（[PlaceholderEntry]），点开进通用留空二级页；
- * - [LabTarget.RealPage]：**已经做出来**的页面（目前只有「天气」），点开进真实路由。
+ * - [LabTarget.RealPage]：**已经做出来**的页面（开发者选项 / 记事本 / 智能体等），点开进真实路由。
  *
  * 没有把「真实页」也塞进 [PlaceholderEntry]：那个枚举同时承担着
  * 「我的 → 基础资料」等**其它页面**的占位文案，往里加一条「天气」
@@ -117,9 +117,6 @@ private sealed interface LabTarget {
  * 其它页面的占位文案，把真实页面塞进去会让 `fromValue()` 在别处也能查到它，语义就混了。
  */
 private enum class LabRealPage(val key: String) {
-    /** 天气（联网查询当地天气）。 */
-    WEATHER("weather"),
-
     /** 开发者选项（仿手机开发者选项的调试页）。 */
     DEVELOPER_OPTIONS("developer_options"),
 
@@ -173,8 +170,6 @@ private data class LabItem(
  * 与「我的」页、头像等处重复用同一个图标。
  */
 private val LAB_ITEMS: List<LabItem> = listOf(
-    // 「天气」是真实页面（联网查询当地天气）。
-    LabItem("天气", LabTarget.RealPage(LabRealPage.WEATHER), Icons.Filled.WbSunny),
     // 「开发者选项」v1.1.64 由占位页升级为真实页面（需求：更名 + 仿手机开发者选项）。
     LabItem("开发者选项", LabTarget.RealPage(LabRealPage.DEVELOPER_OPTIONS), Icons.Filled.Build),
     // 「登录提示功能」v1.1.65 新增（需求：把「打开软件提示登录」加一个开关）。
@@ -367,7 +362,6 @@ private fun pinLabShortcut(context: Context, item: LabItem): Boolean {
  * `TabNavHost` 里的独立目的地、各自有完整的 `Scaffold`，本页的渐变天然盖不到它们。
  *
  * 宫格里的条目分两类（见 [LabTarget]）：
- * - 「天气」走 [onOpenWeather]；
  * - 「开发者选项」走 [onOpenDeveloperOptions]；
  * - 「登录提示功能」走 [onOpenLoginPromptSetting]；
  * - 「记事本」走 [onOpenNotebook]；
@@ -384,7 +378,6 @@ private fun pinLabShortcut(context: Context, item: LabItem): Boolean {
  * 因此**不需要动任何布局逻辑**。
  *
  * @param onOpenEntry 打开留空二级页，参数是 [PlaceholderEntry.value]。
- * @param onOpenWeather 打开「天气」真实页。
  * @param onOpenDeveloperOptions 打开「开发者选项」真实页。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -393,8 +386,6 @@ fun LabScreen(
     onBack: () -> Unit,
     /** 打开留空二级页，参数是 [PlaceholderEntry.value]。 */
     onOpenEntry: (String) -> Unit,
-    /** 打开「天气」真实页（实验室宫格第一项）。 */
-    onOpenWeather: () -> Unit = {},
     /** 打开「开发者选项」真实页（实验室宫格第二项）。 */
     onOpenDeveloperOptions: () -> Unit = {},
     /** 打开「登录提示功能」页（实验室宫格第三项，v1.1.65 新增）。 */
@@ -619,7 +610,6 @@ fun LabScreen(
                                                 onOpenEntry(target.entry.value)
 
                                             is LabTarget.RealPage -> when (target.page) {
-                                                LabRealPage.WEATHER -> onOpenWeather()
                                                 LabRealPage.DEVELOPER_OPTIONS ->
                                                     onOpenDeveloperOptions()
 

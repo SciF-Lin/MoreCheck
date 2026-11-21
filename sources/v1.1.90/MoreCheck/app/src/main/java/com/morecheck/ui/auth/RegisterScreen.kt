@@ -40,11 +40,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.SpanStyle
@@ -59,10 +61,14 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.morecheck.ui.AppViewModelProvider
+import com.morecheck.data.cloud.CloudAuthClient
+import com.morecheck.data.cloud.CloudException
+import com.morecheck.data.cloud.OtpChallenge
+import com.morecheck.data.cloud.friendlyCloudMessage
+import com.morecheck.di.appContainer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * 注册页。
@@ -96,11 +102,15 @@ fun RegisterScreen(
      * 做成独立回调而不是把路由写死在这里：本页是纯展示页，不该知道路由长什么样。
      */
     onRegistered: () -> Unit = onBack,
-    authViewModel: AuthViewModel = viewModel(factory = AppViewModelProvider.Factory)
+    /** 从登录页带过来的手机号（新号码被引导来注册时预填，省得重打一遍）。 */
+    initialPhone: String = ""
 ) {
     val colors = rememberAuthColors()
+    val context = LocalContext.current
+    val authClient = remember(context) { context.appContainer.cloudAuthClient }
+    val scope = rememberCoroutineScope()
 
-    var account by rememberSaveable { mutableStateOf("") }
+    var account by rememberSaveable { mutableStateOf(initialPhone.filter(Char::isDigit).take(11)) }
     var code by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var nickname by rememberSaveable { mutableStateOf("") }
@@ -116,23 +126,18 @@ fun RegisterScreen(
     var agreed by rememberSaveable { mutableStateOf(true) }
     var toast by remember { mutableStateOf<String?>(null) }
 
-    // 开发者选项「验证码测试」的接线（与登录页共用同一实现）。
-    // 注册页也有「发送验证码」按钮，因此这里同样要生成 + 通知；
-    // 生成的码会由 `AuthViewModel.register` 校验（见其 KDoc），两页行为一致。
-    val devCode = rememberDevCodeSender(onMessage = { toast = it })
+    // 「发送验证码」的真实状态（v1.1.91 起接云端，与登录页同一套口径）。
+    var sending by remember { mutableStateOf(false) }
+    var secondsLeft by remember { mutableStateOf(0) }
+    var challenge by remember { mutableStateOf<OtpChallenge?>(null) }
 
-    // 「发送验证码」的状态机（转圈时长抖动 + 转圈结束后才弹提示）与登录页共用同一实现，
-    // 见 `AuthComponents.rememberSendCodeState`——需求要求两页这套交互完全一致。
-    val sendState = rememberSendCodeState(
-        onSent = {
-            // 提示文案跟随「验证码测试」开关：开启时码是真的以通知送达的。
-            toast = if (devCode.enabled) {
-                "验证码已发送，请查看通知栏"
-            } else {
-                "验证码已发送（演示，不会真的发出）"
-            }
+    // 冷却倒计时：到 0 自动停。
+    LaunchedEffect(secondsLeft) {
+        if (secondsLeft > 0) {
+            delay(1000)
+            secondsLeft -= 1
         }
-    )
+    }
 
     // 手机号为空时点「发送验证码」的内联错误提示；一输入就清掉。
     var accountError by remember { mutableStateOf(false) }
@@ -141,13 +146,8 @@ fun RegisterScreen(
     val nicknameState = rememberNicknameCheckState(nickname)
     val nicknameIllegal = nicknameHasIllegalChar(nickname)
 
-    // 是否正在注册 / 是否刚刚注册成功。
-    val registering by authViewModel.isRegistering.collectAsStateWithLifecycle()
-    val registerSucceeded by authViewModel.registerSucceeded.collectAsStateWithLifecycle()
-
-    // 注册流程的失败原因（目前只有开发者选项「验证码测试」这一条路径会产生），
-    // 与登录页同一套出口：走本页已有的 toast，用完立刻清掉，避免下次回来又弹一次。
-    val registerError by authViewModel.error.collectAsStateWithLifecycle()
+    // 是否正在提交注册（按钮转圈）。
+    var registering by remember { mutableStateOf(false) }
 
     // 六项资料全部就绪才允许注册（需求）。
     val canRegister = account.isNotBlank() &&
@@ -164,28 +164,6 @@ fun RegisterScreen(
         }
     }
 
-    // 注册成功：提示 → 复位信号 → 回到「我的信息」。
-    //
-    // 提示先于跳转，让「注册成功」这句话留在屏幕上（AuthToast 会自己消失）；
-    // 紧接着的 [onRegistered] 会**一次性弹掉注册页与登录页两层**，
-    // 落到「我的信息」时登录态已经写入，用户立刻就能看到刚注册的
-    // 昵称 / 性别 / 手机号 / 用户 ID。
-    LaunchedEffect(registerSucceeded) {
-        if (registerSucceeded) {
-            toast = "注册成功"
-            delay(REGISTER_TOAST_MS)
-            authViewModel.consumeRegisterSuccess()
-            onRegistered()
-        }
-    }
-
-    // 失败原因也走 toast（与登录页同一口径），用完立刻清掉。
-    LaunchedEffect(registerError) {
-        registerError?.let {
-            toast = it
-            authViewModel.clearError()
-        }
-    }
 
     Box(
         Modifier
@@ -293,7 +271,7 @@ fun RegisterScreen(
                             Modifier.widthIn(min = SendCodeSlotWidth),
                             contentAlignment = Alignment.CenterEnd
                         ) {
-                            if (sendState.sending) {
+                            if (sending) {
                                 CircularProgressIndicator(
                                     color = colors.accent,
                                     strokeWidth = 2.dp,
@@ -301,26 +279,44 @@ fun RegisterScreen(
                                 )
                             } else {
                                 AuthTextLink(
-                                    text = if (sendState.secondsLeft > 0) {
-                                        "${sendState.secondsLeft}s 后重发"
+                                    text = if (secondsLeft > 0) {
+                                        "${secondsLeft}s 后重发"
                                     } else {
                                         "发送验证码"
                                     },
                                     color = colors.accent,
-                                    enabled = sendState.secondsLeft == 0,
+                                    enabled = secondsLeft == 0,
                                     onClick = {
-                                        // 只要有数字就行（输入框已限制只能输数字），不强求 11 位。
-                                        if (account.isNotEmpty()) {
-                                            // 倒计时与转圈一起启动；「已发送」提示由状态机在
-                                            // 转圈结束后回调，这里不再直接弹。
-                                            accountError = false
-                                            // 「验证码测试」开启时才真正生成 + 通知（未开启是空操作）。
-                                            devCode.send()
-                                            sendState.onStart()
-                                        } else {
-                                            // 没填则显示内联红色错误（下划线 + 下方红字），且**不启动倒计时**，
+                                        if (account.isEmpty()) {
+                                            // 没填则显示内联红色错误，且**不启动倒计时**，
                                             // 否则用户会立刻被 60 秒锁住，连改输的机会都没有。
                                             accountError = true
+                                            return@AuthTextLink
+                                        }
+                                        val badFormat = runCatching {
+                                            CloudAuthClient.requireMainlandPhone(account)
+                                        }.exceptionOrNull() as? CloudException
+                                        if (badFormat != null) {
+                                            toast = friendlyCloudMessage(badFormat.error)
+                                            return@AuthTextLink
+                                        }
+                                        accountError = false
+                                        sending = true
+                                        scope.launch {
+                                            try {
+                                                challenge = authClient.sendCode(account)
+                                                // 只有**真的发出去了**才开始冷却。
+                                                secondsLeft = SEND_COOLDOWN_SECONDS
+                                                toast = "验证码已发送，请查看短信"
+                                            } catch (e: CancellationException) {
+                                                throw e
+                                            } catch (e: CloudException) {
+                                                toast = friendlyCloudMessage(e.error)
+                                            } catch (e: Exception) {
+                                                toast = "发送失败：${e.message ?: "未知错误"}"
+                                            } finally {
+                                                sending = false
+                                            }
                                         }
                                     }
                                 )
@@ -447,14 +443,58 @@ fun RegisterScreen(
                             // `canRegister` 已经保证性别非空，这里用 `!!` 之外的写法只是为了让
                             // 智能转换生效（`gender` 是 `var`，编译器无法跨 lambda 保持非空推断）。
                             val picked = gender ?: return@AuthPrimaryButton
-                            authViewModel.register(
-                                phone = account,
-                                nickname = nickname,
-                                gender = picked,
-                                // 验证码一并交给 ViewModel：开发者选项「验证码测试」开启时，
-                                // 它会与「发送验证码」记下的六位数字比对；关闭时不看这个值。
-                                credential = code
-                            )
+                            val current = challenge
+                            if (current == null) {
+                                toast = "请先获取验证码"
+                                return@AuthPrimaryButton
+                            }
+                            if (current.isExistingUser) {
+                                // 已注册的号码不该在这里「再注册一次」：直接引导回登录，
+                                // 避免出现「注册成功」但其实只是登进了老账号的错觉。
+                                toast = "该手机号已注册，请用密码或验证码登录"
+                                return@AuthPrimaryButton
+                            }
+                            if (password.length < MIN_PASSWORD_LENGTH) {
+                                toast = "密码至少 $MIN_PASSWORD_LENGTH 位"
+                                return@AuthPrimaryButton
+                            }
+                            registering = true
+                            scope.launch {
+                                try {
+                                    // 注册 = 校验验证码 + 建号 + 设置密码，一次请求闭环。
+                                    val session = authClient.verifyCode(
+                                        current,
+                                        code,
+                                        password = password
+                                    )
+                                    val cloudName = try {
+                                        authClient.me().name
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (_: Exception) {
+                                        null
+                                    }
+                                    // 先落本地资料再落地登录态：onCloudLoginSucceeded 只在
+                                    // 本地昵称为空时才用 cloudName，顺序反了就会被空值占位。
+                                    context.appContainer.settingsRepository.setNickname(nickname)
+                                    context.appContainer.settingsRepository.setGender(picked)
+                                    context.appContainer.authRepository.onCloudLoginSucceeded(
+                                        phone = session.phone ?: account,
+                                        cloudName = cloudName
+                                    )
+                                    toast = "注册成功"
+                                    delay(REGISTER_TOAST_MS)
+                                    onRegistered()
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: CloudException) {
+                                    toast = friendlyCloudMessage(e.error)
+                                } catch (e: Exception) {
+                                    toast = "注册失败：${e.message ?: "未知错误"}"
+                                } finally {
+                                    registering = false
+                                }
+                            }
                         }
                     )
 
@@ -580,6 +620,12 @@ private val FieldGap = 20.dp
 
 /** 注册成功后「注册成功」提示的停留时长，随即返回上一页。 */
 private const val REGISTER_TOAST_MS = 1200L
+
+/** 「发送验证码」成功后的冷却秒数（云端重发限频约 1 分钟）。 */
+private const val SEND_COOLDOWN_SECONDS = 60
+
+/** 登录密码最短长度，与服务端约束对齐，避免提交后才被拒。 */
+private const val MIN_PASSWORD_LENGTH = 6
 
 /**
  * 底部协议行：勾选框 + 一句话，句中的两个书名号是**真正的行内链接**。

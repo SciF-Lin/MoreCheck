@@ -27,7 +27,6 @@ import com.morecheck.ui.lab.DeveloperOptionsScreen
 import com.morecheck.ui.lab.LabScreen
 import com.morecheck.ui.lab.LoginPromptSettingScreen
 import com.morecheck.ui.lab.NotebookScreen
-import com.morecheck.ui.lab.WeatherScreen
 import com.morecheck.ui.agent.AgentChatScreen
 import com.morecheck.ui.agent.AiSettingsScreen
 import com.morecheck.ui.web.SearchWebScreen
@@ -429,7 +428,7 @@ fun TabNavHost(
             ChangelogScreen(onBack = { navController.popBackStack() })
         }
 
-        // 实验室：发现 → 实验室。宫格里「天气」与「开发者选项」都是真实页面，
+        // 实验室：发现 → 实验室。宫格里「开发者选项」等是真实页面，
         // 底部「新增功能」仍只进入留空二级页。
         composable(tab.routeOf(TabDestination.Lab)) {
             LabScreen(
@@ -437,7 +436,6 @@ fun TabNavHost(
                 onOpenEntry = { value ->
                     navController.navigate("${tab.name}.placeholder/$value")
                 },
-                onOpenWeather = { navController.navigate(tab.routeOf(TabDestination.Weather)) },
                 onOpenDeveloperOptions = {
                     navController.navigate(tab.routeOf(TabDestination.DeveloperOptions))
                 },
@@ -490,18 +488,6 @@ fun TabNavHost(
         composable(tab.routeOf(TabDestination.DeveloperOptions)) {
             DeveloperOptionsScreen(
                 onBack = { navController.popBackStack() },
-                onMessage = onActionMessage
-            )
-        }
-
-        // 天气：按「定位」开关门控，联网查询当地天气。
-        // 需要权限时把人送到「权限管理」页，那里有开关与系统设置入口。
-        composable(tab.routeOf(TabDestination.Weather)) {
-            WeatherScreen(
-                onBack = { navController.popBackStack() },
-                onOpenPermissionSettings = {
-                    navController.navigate(tab.routeOf(TabDestination.Permissions))
-                },
                 onMessage = onActionMessage
             )
         }

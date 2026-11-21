@@ -3,6 +3,7 @@ package com.morecheck.data
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlin.random.Random
 
@@ -79,6 +80,24 @@ class AuthRepository(private val settings: SettingsRepository) {
 
     suspend fun logout() {
         settings.setLoggedOut()
+    }
+
+    /**
+     * 云登录成功后的本地落地（v1.1.91 起，与 1.1.90 同一实现）。
+     *
+     * 云会话本身由 `CloudAuthClient` 持有；这里只把「已登录 + 手机号」写进本地设置，
+     * 让「我的」「个人信息」等既有界面不必改读云会话。昵称只在本地为空时用云端资料补，
+     * 避免覆盖用户自己改过的昵称。
+     */
+    suspend fun onCloudLoginSucceeded(phone: String, cloudName: String?) {
+        settings.setLoggedIn(phone = phone, mode = "sms")
+        if (settings.rawData.first()[Keys.USER_ID].isNullOrBlank()) {
+            settings.setUserId(newUserId())
+        }
+        val localNickname = settings.rawData.first()[Keys.NICKNAME]
+        if (localNickname.isNullOrBlank() && !cloudName.isNullOrBlank()) {
+            settings.setNickname(cloudName)
+        }
     }
 
     companion object {

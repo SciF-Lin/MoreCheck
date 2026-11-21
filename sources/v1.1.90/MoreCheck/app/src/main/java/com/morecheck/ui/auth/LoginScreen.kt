@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,6 +45,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.morecheck.R
@@ -58,6 +60,9 @@ import kotlinx.coroutines.launch
 
 /** 「发送验证码」成功后的冷却秒数（与云端口径一致：重发限频约 1 分钟）。 */
 private const val SEND_COOLDOWN_SECONDS = 60
+
+/** 注册时登录密码的最短长度。与服务端约束对齐，避免提交后才被拒。 */
+private const val MIN_PASSWORD_LENGTH = 6
 
 /**
  * 登录页（**真实云登录**，v1.1.80 起）。
@@ -117,6 +122,16 @@ fun LoginScreen(
     var submitting by remember { mutableStateOf(false) }
     var secondsLeft by remember { mutableStateOf(0) }
     var challenge by remember { mutableStateOf<OtpChallenge?>(null) }
+
+    // 新号码要顺手设置登录密码（v1.1.91）。
+    //
+    // 云端「注册」与「登录」是同一个验证码入口：`isExistingUser == false` 时，
+    // 提交验证码会在服务端**创建账号**。改造前这条路径不设密码，账号从此只能收短信
+    // 才能登录；现在把密码框就地补在这一屏（而不是把用户推去注册页重发一次短信，
+    // 那要多等一分钟的发送冷却，还会白花一条短信）。
+    var password by rememberSaveable { mutableStateOf("") }
+    // 是否已确定「这是新号码」。challenge 一到手就有答案。
+    val isNewUser = challenge?.isExistingUser == false
 
     // 冷却倒计时：到 0 自动停。
     LaunchedEffect(secondsLeft) {
@@ -292,6 +307,29 @@ fun LoginScreen(
 
                 Spacer(Modifier.height(34.dp))
 
+                // 新号码：就地设置登录密码（理由见上面 isNewUser 的注释）。
+                // 老号码不显示——他们的密码是注册时设的，这里多一个空密码框只会让人以为要改密码。
+                if (isNewUser) {
+                    AuthUnderlineField(
+                        value = password,
+                        onValueChange = { password = it.take(32) },
+                        placeholder = "设置登录密码（至少 6 位）",
+                        leadingIcon = Icons.Filled.Lock,
+                        colors = colors,
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = "该手机号还没有账号，验证后将自动注册；设置密码后可用密码登录",
+                        color = colors.muted,
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.height(24.dp))
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -305,10 +343,11 @@ fun LoginScreen(
                     AuthPrimaryButton(
                         // 2026-10-22 需求 15：加载态由 `loading` 驱动（转圈 + 「登录中…」），
                         // 不再只靠"把按钮置灰 + 换文案"——那样点下去看不出在转。
-                        text = if (submitting) "登录中…" else "登录",
+                        text = if (submitting) "登录中…" else if (isNewUser) "注册并登录" else "登录",
                         colors = colors,
                         loading = submitting,
-                        enabled = phone.isNotEmpty() && code.isNotEmpty() && !submitting,
+                        enabled = phone.isNotEmpty() && code.isNotEmpty() && !submitting &&
+                            (!isNewUser || password.length >= MIN_PASSWORD_LENGTH),
                         // 登录页没有协议勾选框，云端登录以登录行为本身视为同意。
                         onClick = {
                             val current = challenge
@@ -325,7 +364,12 @@ fun LoginScreen(
                             submitting = true
                             scope.launch {
                                 try {
-                                    val session = authClient.verifyCode(current, code)
+                                    // 新号码把密码一起交给服务端注册；老号码传 null（改密码要走旧密码校验）。
+                                    val session = authClient.verifyCode(
+                                        current,
+                                        code,
+                                        password = if (current.isExistingUser) null else password
+                                    )
 
                                     // 云登录落地到本地登录态（"我的"页头像卡的已登录状态与
                                     // 手机号、个人信息页都读本地 AuthRepository）。

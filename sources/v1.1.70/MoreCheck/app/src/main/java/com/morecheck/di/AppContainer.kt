@@ -5,10 +5,12 @@ import com.morecheck.data.AiChatRepository
 import com.morecheck.data.AiChatSettingsStore
 import com.morecheck.data.AuthRepository
 import com.morecheck.data.BackupRepository
+import com.morecheck.data.cloud.CloudAuthClient
 import com.morecheck.data.CheckDatabase
 import com.morecheck.data.DeveloperOptionsRepository
 import com.morecheck.data.SettingsRepository
 import com.morecheck.data.TaskRepository
+import com.morecheck.MoreCheckApp
 import com.morecheck.reminder.NotificationHelper
 import com.morecheck.reminder.ReminderScheduler
 
@@ -43,4 +45,21 @@ class AppContainer(context: Context) {
      */
     val aiChatSettingsStore = AiChatSettingsStore(appContext)
     val aiChatRepository = AiChatRepository(aiChatSettingsStore)
+
+    /**
+     * 云端会话（手机号验证码 / 密码登录）。
+     *
+     * 进程内单例：登录页、密码登录页、注册页拿到的必须是同一个实例——
+     * 会话状态、刷新单飞（mutex）都挂在它身上，多实例会让「登录了但另一页还是未登录」。
+     */
+    val cloudAuthClient = CloudAuthClient(appContext)
 }
+
+/**
+ * 从任意 Context 取容器。
+ *
+ * 必须走 `applicationContext` 再转型：Compose 里 `LocalContext` 通常是 Activity，
+ * 直接 `as MoreCheckApp` 会抛 ClassCastException。
+ */
+val Context.appContainer: AppContainer
+    get() = (applicationContext as MoreCheckApp).container

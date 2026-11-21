@@ -31,11 +31,11 @@ package com.morecheck.data.cloud
 object CloudConfig {
 
     /** 数据平面基地址（publicConfig.endpoint）。 */
-    const val ENDPOINT = "https://morecheck-sync.app.workbuddy.host"
+    const val ENDPOINT = "https://morecheck.app.workbuddy.host"
 
     /** 应用标识（publicConfig.publishableKey）。无权限，仅标识应用。 */
     const val PUBLISHABLE_KEY =
-        "wbpk_pQB4MT3Hax2MFbWqH3Xj3t_t00dgUklIh0YkkkzDq1LaCh7jib8AhAn"
+        "wbpk_2KA020VX3CkCXSDkX332mn_H6ASAdRoRnjV7bIqf8XKJVxMaitI5sch"
 
     /** 认证模块基地址（手机号验证码登录 / 会话刷新 / 用户信息）。 */
     const val AUTH_BASE = "$ENDPOINT/.cloud/auth"

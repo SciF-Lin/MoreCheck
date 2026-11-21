@@ -12,6 +12,7 @@ keystore.properties
 /keystore/
 
 # 不属于公开交付物的本地文件
+.wbapp_*.genie
 .workbuddy/
 /original-apks/
 /scripts/rebrand.py

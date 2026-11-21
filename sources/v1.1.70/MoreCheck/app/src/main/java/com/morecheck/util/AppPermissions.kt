@@ -38,16 +38,6 @@ enum class AppPermission(
         scene = "用于「扫一扫」实时扫码",
         manifestPermissions = listOf(Manifest.permission.CAMERA)
     ),
-    LOCATION(
-        id = "location",
-        title = "定位",
-        // 粗略定位就够算城市了，因此 FINE / COARSE 任一被授予即通过。
-        scene = "用于「实验室 → 天气」查询所在城市",
-        manifestPermissions = listOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        )
-    ),
     NOTIFICATION(
         id = "notification",
         title = "通知",

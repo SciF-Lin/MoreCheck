@@ -1,5 +1,15 @@
 package com.morecheck.ui.auth
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -68,7 +78,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.morecheck.MoreCheckApp
+import com.morecheck.di.appContainer
 import kotlinx.coroutines.delay
 import kotlin.random.Random
 
@@ -351,23 +361,82 @@ fun AuthPrimaryButton(
         modifier = modifier
             .height(50.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(if (interactive) colors.accent else colors.accentDisabled)
+            // 2026-10-22 需求 15：加载中**不再把底色换成禁用色**。
+            // 参考 `jztheme.css` 的 `.jztheme-tools-css-button-loading`：按钮保持主色，
+            // 只是内容换成「转圈 + 原文」，因此这里按 `enabled`（而不是 `interactive`）取色。
+            .background(if (enabled) colors.accent else colors.accentDisabled)
             .authPressable(onClick = onClick, enabled = interactive),
         contentAlignment = Alignment.Center
     ) {
         if (loading) {
-            CircularProgressIndicator(
-                color = colors.accentDisabledText,
-                strokeWidth = 2.dp,
-                modifier = Modifier.size(20.dp)
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                // CSS 的 `gap: 10px`。
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                AuthSpinner(color = colors.onAccent)
+                Text(
+                    text = text,
+                    color = colors.onAccent,
+                    fontSize = 16.sp
+                )
+            }
         } else {
             Text(
                 text = text,
-                color = if (interactive) colors.onAccent else colors.accentDisabledText,
+                color = if (enabled) colors.onAccent else colors.accentDisabledText,
                 fontSize = 16.sp
             )
         }
+    }
+}
+
+/**
+ * 按钮内的小转圈（2026-10-22 需求 15，参数对照 `jztheme.css`）。
+ *
+ * CSS 里的写法是：16×16 的圆、`border: 2px solid #fff` + `border-right-color: transparent`、
+ * `animation: spin 1s linear infinite`。Compose 的 `border` 不能"只让一条边透明"，
+ * 所以这里用 `Canvas.drawArc` 画一段 **270° 的白色圆弧**（留下 90° 缺口），
+ * 再对整体做 `rotationZ` 线性旋转——视觉上与 CSS 那条"缺一角的圈"完全一致。
+ *
+ * ⚠️ 与 Material 的 `CircularProgressIndicator` 的区别：后者是**带弧长伸缩**的
+ * 不定进度动画（转得快慢不均、弧长在变），在小按钮里看起来像"卡一下转一下"；
+ * CSS 这个是**匀速整圈转**，观感明显更稳定。
+ */
+@Composable
+fun AuthSpinner(
+    color: Color,
+    modifier: Modifier = Modifier,
+    size: androidx.compose.ui.unit.Dp = 16.dp,
+    strokeWidth: androidx.compose.ui.unit.Dp = 2.dp
+) {
+    val transition = rememberInfiniteTransition(label = "auth-spinner")
+    val angle by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1_000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "auth-spinner-angle"
+    )
+    Canvas(
+        modifier = modifier
+            .size(size)
+            .graphicsLayer { rotationZ = angle }
+    ) {
+        // -90° = 从 12 点方向起画；270° 的弧 = 缺右下那一段（对应 CSS 的
+        // transparent 右边）。圆头端点让两端不显得被切断。
+        drawArc(
+            color = color,
+            startAngle = -90f,
+            sweepAngle = 270f,
+            useCenter = false,
+            style = Stroke(
+                width = strokeWidth.toPx(),
+                cap = StrokeCap.Round
+            )
+        )
     }
 }
 
@@ -777,10 +846,10 @@ fun rememberDevCodeSender(onMessage: (String) -> Unit): DevCodeSender {
     val context = LocalContext.current
     // 容器是进程单例，`remember` 一下即可；不要每次重组都去 cast。
     val repository = remember {
-        (context.applicationContext as MoreCheckApp).container.developerOptionsRepository
+        context.appContainer.developerOptionsRepository
     }
     val notificationHelper = remember {
-        (context.applicationContext as MoreCheckApp).container.notificationHelper
+        context.appContainer.notificationHelper
     }
     // 开关在 DataStore 里，订阅它即可实时跟随开发者选项页的改动。
     val enabled by repository.codeTestEnabled.collectAsStateWithLifecycle(initialValue = false)

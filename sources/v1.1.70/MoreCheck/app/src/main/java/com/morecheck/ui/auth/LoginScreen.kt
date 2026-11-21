@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,121 +40,114 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.morecheck.R
-import com.morecheck.ui.AppViewModelProvider
+import com.morecheck.data.cloud.CloudAuthClient
+import com.morecheck.data.cloud.CloudException
+import com.morecheck.data.cloud.OtpChallenge
+import com.morecheck.data.cloud.friendlyCloudMessage
+import com.morecheck.di.appContainer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+/** 「发送验证码」成功后的冷却秒数（与云端口径一致：重发限频约 1 分钟）。 */
+private const val SEND_COOLDOWN_SECONDS = 60
+
+/** 注册时登录密码的最短长度。与服务端约束对齐，避免提交后才被拒。 */
+private const val MIN_PASSWORD_LENGTH = 6
 
 /**
- * 登录页。
+ * 登录页（**真实云登录**，v1.1.80 起）。
  *
- * 版式照参考图，**配色全部由主题推导**（见 [rememberAuthColors]）：
- * 底色跟随深色模式开关，按钮与链接跟随主题色。
+ * ## 这一页现在是真的
  *
- * 表单是「手机号 + 验证码」，走的是**纯 UI 校验**：
- * 任意手机号 + 任意验证码都能登录（校验规则见 [AuthViewModel.simulate]），
- * 页面自己只保证两个框非空。这是需求明确要求的，别再加格式校验。
+ * 版式与改造前完全一致（配色全部由主题推导，见 [rememberAuthColors]），但验证码链路
+ * 已从「纯 UI 校验的本地演示」升级为**真实云登录**：
+ * - 「发送验证码」走 `CloudAuthClient.sendCode` —— 云平台代发**真实短信**；
+ * - 「登录」走 `verifyCode` —— 老用户登录 / 新用户自动注册，同一个按钮；
+ * - 登录成功经 `AuthRepository.onCloudLoginSucceeded` 落地本地登录态，
+ *   「我的」页与「个人信息」页随即显示已登录。
  *
- * 五处刻意的取舍：
- * - 验证码用 `KeyboardType.Number` 而非 `NumberPassword`：验证码本来就要肉眼核对，
- *   遮蔽只会让人打错。注册页用的是同一套写法，两页保持一致。
- * - 「发送验证码」是**纯前端倒计时**，不发短信，与注册页共用 [rememberSendCodeState]。
- * - 「登录」成功与否看 [AuthViewModel.loginSucceeded]，**绝不能用 isLoggedIn**：
- *   后者由 DataStore 驱动、初值为 false，页面内有任何一次重组都会把它采成 false 而立刻回退。
- * - 「忘记密码?」**v1.1.65 起进入真实的「找回密码」页**（[onOpenForgotPassword] →
- *   `TabDestination.ForgotPassword`，通过短信验证码找回，**仅界面演示**）。
- *   此前它进的是 `PlaceholderEntry.FORGOT_PASSWORD` 那张留空页，
- *   那个占位枚举项已随之删除；本页的 `onOpenPlaceholder` 参数也一并删掉——
- *   它当时是**为「忘记密码」而加**的，没有别的调用方，留着就是死参数。
- * - 底部的「微信」「QQ」**不再进二级页**，点一下只就地弹一句「功能开发中」
- *   （需求：删除二级界面，改为消息提示）。提示复用本页已有的 `toast` + [AuthToast]，
- *   不新增全局消息通道，因此无需改 `TabNavHost.kt`。
+ * ## 三个占位入口保持占位（需求原话：保持占位作用）
  *
- * ## 两个新接线点都带默认值，且都排在 `authViewModel` 之前
+ * - **注册**：真实云登录**自动注册**（新手机号发验证码即可登录 = 注册），独立的注册页
+ *   保留为界面演示（[onOpenRegister]）；
+ * - **使用密码登录** / **忘记密码?**：仍进既有的密码登录两步页与找回密码页（仅界面演示）。
  *
- * [onOpenForgotPassword] 与 [onOpenPasswordLogin] 都是「后来新增的接线点」：
- * 带默认值 `{}` 可让既有调用方（以及 preview / 测试）无需立刻跟着改。
- * 位置也必须在这里——带默认值的参数后面不能再跟一个不带默认值的参数，
- * 而 `authViewModel` 也不能被挤到更前面（既有调用方按具名传它，动它就等于改签名）。
+ * 「微信」「QQ」也维持就地弹「功能开发中」的原口径。
+ *
+ * ## 与开发者选项「验证码测试」的关系
+ *
+ * 那个开关生成的是**本地六位码**（经通知送达），服务端从未见过它——对真实云登录
+ * 没有意义，本页不再接入。若短信因限额 / 网络问题收不到，服务端的原文错误会经
+ * [friendlyCloudMessage] 如实展示在 toast 上。
+ *
+ * ## 「发送验证码」的状态机
+ *
+ * - [sending]：`sendCode` 网络往返中（转圈）。**倒计时在它成功后才开始**——
+ *   请求可能失败，失败了还倒计时会让用户以为码已发出；
+ * - [submitting]：`verifyCode` 往返中（按钮转圈）。错码可重试且**复用同一个
+ *   [OtpChallenge]**（服务端的验证会话在成功或过期前一直有效）。
  */
 @Composable
 fun LoginScreen(
     onBack: () -> Unit,
     onOpenRegister: () -> Unit,
-    /** 点击「忘记密码?」：进入「找回密码」页（v1.1.65 起是真实页面）。 */
+    /** 点击「忘记密码?」：进入「找回密码」页（界面演示）。 */
     onOpenForgotPassword: () -> Unit = {},
-    /** 点击「使用密码登录」：进入密码登录第一步（只填手机号）。 */
-    onOpenPasswordLogin: () -> Unit = {},
-    authViewModel: AuthViewModel = viewModel(factory = AppViewModelProvider.Factory)
+    /** 点击「使用密码登录」：进入密码登录第一步（只填手机号，界面演示）。 */
+    onOpenPasswordLogin: () -> Unit = {}
 ) {
     val colors = rememberAuthColors()
+    val context = LocalContext.current
+    val authClient = remember(context) { context.appContainer.cloudAuthClient }
+    val scope = rememberCoroutineScope()
 
     var phone by rememberSaveable { mutableStateOf("") }
     var code by rememberSaveable { mutableStateOf("") }
     var toast by remember { mutableStateOf<String?>(null) }
 
-    val isSubmitting by authViewModel.isSubmitting.collectAsStateWithLifecycle()
-    val error by authViewModel.error.collectAsStateWithLifecycle()
-    val loginSucceeded by authViewModel.loginSucceeded.collectAsStateWithLifecycle()
+    /** 手机号的内联错误（空 / 格式错各一句话）；一开始输入就清掉。 */
+    var phoneError by remember { mutableStateOf<String?>(null) }
 
-    // 「发送验证码」与注册页共用同一套状态机（转圈时长抖动 + 转圈结束后才弹提示），
-    // 需求要求两页这里完全一致。
-    // 手机号为空时点「发送验证码」的内联错误提示；一输入就清掉。
-    var phoneError by remember { mutableStateOf(false) }
+    var sending by remember { mutableStateOf(false) }
+    var submitting by remember { mutableStateOf(false) }
+    var secondsLeft by remember { mutableStateOf(0) }
+    var challenge by remember { mutableStateOf<OtpChallenge?>(null) }
 
-    // 开发者选项「验证码测试」的接线：开启时点「发送验证码」会生成六位码、记为后端记录并发通知。
-    // 与注册页共用同一实现（`AuthComponents.rememberDevCodeSender`），两页不会走样。
+    // 新号码要顺手设置登录密码（v1.1.91）。
     //
-    // 未开启时 [DevCodeSender.send] 是空操作，本页行为与从前完全一致。
-    val devCode = rememberDevCodeSender(onMessage = { toast = it })
+    // 云端「注册」与「登录」是同一个验证码入口：`isExistingUser == false` 时，
+    // 提交验证码会在服务端**创建账号**。改造前这条路径不设密码，账号从此只能收短信
+    // 才能登录；现在把密码框就地补在这一屏（而不是把用户推去注册页重发一次短信，
+    // 那要多等一分钟的发送冷却，还会白花一条短信）。
+    var password by rememberSaveable { mutableStateOf("") }
+    // 是否已确定「这是新号码」。challenge 一到手就有答案。
+    val isNewUser = challenge?.isExistingUser == false
 
-    val sendState = rememberSendCodeState(
-        onSent = {
-            // 「已发送」这句话要跟着验证码测试的开关变：
-            // 关闭时（原行为）如实说明是演示、不会真的发出；
-            // 开启时验证码真的以通知形式送到了，让用户去通知栏拿就去通知栏拿。
-            toast = if (devCode.enabled) {
-                "验证码已发送，请查看通知栏"
-            } else {
-                "验证码已发送（演示，不会真的发出）"
-            }
+    // 冷却倒计时：到 0 自动停。
+    LaunchedEffect(secondsLeft) {
+        if (secondsLeft > 0) {
+            delay(1000)
+            secondsLeft -= 1
         }
-    )
+    }
 
-
+    // toast 1.6 秒后自动消失（与改造前同一时长）。
     LaunchedEffect(toast) {
         if (toast != null) {
             delay(1600)
             toast = null
         }
     }
-
-    // 登录成功：先提示，再退回上一页（「我的」页此时已能读到登录态）。
-    // 用 loginSucceeded 这个显式信号，而不是 DataStore 驱动的 isLoggedIn，原因见类注释。
-    LaunchedEffect(loginSucceeded) {
-        if (loginSucceeded) {
-            toast = "登录成功"
-            delay(600)
-            onBack()
-        }
-    }
-
-    // 失败提示也要走 toast，用完立刻清掉，避免下次回到本页又弹一次。
-    LaunchedEffect(error) {
-        error?.let {
-            toast = it
-            authViewModel.clearError()
-        }
-    }
-
-    val canSubmit = phone.isNotBlank() && code.isNotBlank() && !isSubmitting
 
     Box(
         Modifier
@@ -195,31 +190,34 @@ fun LoginScreen(
                     fontSize = 34.sp,
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(Modifier.height(40.dp))
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "验证码登录后可同步打卡数据、记事本与游戏存档",
+                    color = colors.muted,
+                    fontSize = 13.sp
+                )
+                Spacer(Modifier.height(32.dp))
 
                 AuthUnderlineField(
                     value = phone,
-                    // 只允许数字：手机号就是纯数字，顺手挡掉字母与符号（与注册页同一口径），
-                    // 但仍然不校验号段——需求允许任意手机号通过。
+                    // 只允许数字、最多 11 位（与注册页同一口径）。
                     onValueChange = { input ->
                         phone = input.filter(Char::isDigit).take(11)
                         // 一旦开始输入就清掉内联错误，避免「改了还是红」。
-                        if (phoneError && phone.isNotEmpty()) phoneError = false
+                        if (phoneError != null && phone.isNotEmpty()) phoneError = null
                     },
                     placeholder = "手机号",
                     leadingIcon = Icons.Filled.Phone,
                     colors = colors,
-                    isError = phoneError,
-                    supporting = if (phoneError) {
+                    isError = phoneError != null,
+                    supporting = phoneError?.let { message ->
                         {
                             Text(
-                                "请输入手机号",
+                                message,
                                 color = colors.errorColor,
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
-                    } else {
-                        null
                     },
                     keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Next,
@@ -251,16 +249,13 @@ fun LoginScreen(
                             .background(colors.hairline)
                     )
                     Spacer(Modifier.width(16.dp))
-                    // 「发送验证码」这一格用固定宽度：转圈、原文、倒计时三种形态都居中在这里面。
-                    //
-                    // 不加固定宽度时，这格的宽度随内容变（转圈 16dp / 「发送验证码」5 字 /
-                    // 「57s 后重发」更宽），左侧验证码输入框是 weight(1f) 吃剩余空间，
-                    // 于是分界线会跟着左右移动——正是用户反馈的「分界线位置变了」。
+                    // 「发送验证码」这一格用固定宽度：转圈、原文、倒计时三种形态都居中在这里面，
+                    // 分界线不随内容左右移动（理由同改造前）。
                     Box(
                         Modifier.widthIn(min = SendCodeSlotWidth),
                         contentAlignment = Alignment.CenterEnd
                     ) {
-                        if (sendState.sending) {
+                        if (sending) {
                             CircularProgressIndicator(
                                 color = colors.accent,
                                 strokeWidth = 2.dp,
@@ -268,24 +263,41 @@ fun LoginScreen(
                             )
                         } else {
                             AuthTextLink(
-                                text = if (sendState.secondsLeft > 0) {
-                                    "${sendState.secondsLeft}s 后重发"
+                                text = if (secondsLeft > 0) {
+                                    "${secondsLeft}s 后重发"
                                 } else {
                                     "发送验证码"
                                 },
                                 color = colors.accent,
-                                enabled = sendState.secondsLeft == 0,
+                                enabled = secondsLeft == 0,
                                 onClick = {
-                                    if (phone.isNotEmpty()) {
-                                        // 倒计时与转圈一起启动；提示由状态机在转圈结束后回调。
-                                        phoneError = false
-                                        // 「验证码测试」开启时才真正生成 + 通知（未开启是空操作）。
-                                        devCode.send()
-                                        sendState.onStart()
-                                    } else {
-                                        // 内联红色错误态（下划线 + 下方红字），不再弹 toast：
-                                        // toast 会盖在键盘上还马上消失，内联提示能一直指着输入框。
-                                        phoneError = true
+                                    // 先做本地校验：空号 / 格式错都走内联红态，不白发请求
+                                    // （格式校验复用 CloudAuthClient 的同一实现，两处口径不会漂移）。
+                                    phoneError = when {
+                                        phone.isEmpty() -> "请输入手机号"
+                                        else -> runCatching {
+                                            CloudAuthClient.requireMainlandPhone(phone)
+                                        }.exceptionOrNull()?.let { e ->
+                                            (e as? CloudException)?.error?.message
+                                        }
+                                    }
+                                    if (phoneError != null) return@AuthTextLink
+                                    sending = true
+                                    scope.launch {
+                                        try {
+                                            challenge = authClient.sendCode(phone)
+                                            // 只有**真的发出去了**才开始冷却。
+                                            secondsLeft = SEND_COOLDOWN_SECONDS
+                                            toast = "验证码已发送，请查看短信"
+                                        } catch (e: CancellationException) {
+                                            throw e
+                                        } catch (e: CloudException) {
+                                            toast = friendlyCloudMessage(e.error)
+                                        } catch (e: Exception) {
+                                            toast = "发送失败：${e.message ?: "未知错误"}"
+                                        } finally {
+                                            sending = false
+                                        }
                                     }
                                 }
                             )
@@ -294,6 +306,29 @@ fun LoginScreen(
                 }
 
                 Spacer(Modifier.height(34.dp))
+
+                // 新号码：就地设置登录密码（理由见上面 isNewUser 的注释）。
+                // 老号码不显示——他们的密码是注册时设的，这里多一个空密码框只会让人以为要改密码。
+                if (isNewUser) {
+                    AuthUnderlineField(
+                        value = password,
+                        onValueChange = { password = it.take(32) },
+                        placeholder = "设置登录密码（至少 6 位）",
+                        leadingIcon = Icons.Filled.Lock,
+                        colors = colors,
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = "该手机号还没有账号，验证后将自动注册；设置密码后可用密码登录",
+                        color = colors.muted,
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.height(24.dp))
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -306,18 +341,68 @@ fun LoginScreen(
                         modifier = Modifier.weight(1f)
                     )
                     AuthPrimaryButton(
-                        text = if (isSubmitting) "登录中…" else "登录",
+                        // 2026-10-22 需求 15：加载态由 `loading` 驱动（转圈 + 「登录中…」），
+                        // 不再只靠"把按钮置灰 + 换文案"——那样点下去看不出在转。
+                        text = if (submitting) "登录中…" else if (isNewUser) "注册并登录" else "登录",
                         colors = colors,
-                        enabled = canSubmit,
-                        // 登录页没有协议勾选框，因此固定传 agreed = true；
-                        // 否则 submit 会在协议校验处直接返回，永远登不上。
+                        loading = submitting,
+                        enabled = phone.isNotEmpty() && code.isNotEmpty() && !submitting &&
+                            (!isNewUser || password.length >= MIN_PASSWORD_LENGTH),
+                        // 登录页没有协议勾选框，云端登录以登录行为本身视为同意。
                         onClick = {
-                            authViewModel.submit(
-                                mode = LoginMode.SMS,
-                                phone = phone,
-                                credential = code,
-                                agreed = true
-                            )
+                            val current = challenge
+                            if (current == null) {
+                                // 没取过验证码（或页面被重建过）：引导先取码，
+                                // 而不是提交一个服务端不认识的空会话。
+                                toast = "请先获取验证码"
+                                return@AuthPrimaryButton
+                            }
+                            if (code.isBlank()) {
+                                toast = "请输入验证码"
+                                return@AuthPrimaryButton
+                            }
+                            submitting = true
+                            scope.launch {
+                                try {
+                                    // 新号码把密码一起交给服务端注册；老号码传 null（改密码要走旧密码校验）。
+                                    val session = authClient.verifyCode(
+                                        current,
+                                        code,
+                                        password = if (current.isExistingUser) null else password
+                                    )
+
+                                    // 云登录落地到本地登录态（"我的"页头像卡的已登录状态与
+                                    // 手机号、个人信息页都读本地 AuthRepository）。
+                                    // 昵称取云端资料（me()），失败不影响登录本身。
+                                    val cloudName = try {
+                                        authClient.me().name
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (_: Exception) {
+                                        null
+                                    }
+                                    context.appContainer.authRepository.onCloudLoginSucceeded(
+                                        phone = session.phone ?: current.phone,
+                                        cloudName = cloudName
+                                    )
+
+                                    toast = "登录成功"
+                                    // 先提示再退：回退后「我的」页已能读到新登录态，
+                                    // 首次登录策略弹窗（根骨架托管）会接住后续流程。
+                                    delay(600)
+                                    onBack()
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: CloudException) {
+                                    // 错码可重试：challenge 仍然有效，倒计时也不重置
+                                    // （服务端的验证会话没被这次失败消耗掉）。
+                                    toast = friendlyCloudMessage(e.error)
+                                } catch (e: Exception) {
+                                    toast = "登录失败：${e.message ?: "未知错误"}"
+                                } finally {
+                                    submitting = false
+                                }
+                            }
                         },
                         modifier = Modifier.weight(1f)
                     )
@@ -325,14 +410,7 @@ fun LoginScreen(
 
                 Spacer(Modifier.height(4.dp))
 
-                // 「使用密码登录」与「忘记密码?」并排一行：前者靠左、后者靠右。
-                //
-                // 为什么并排而不是上下两行：两个都是「换一条路登录 / 找回」的次级入口，
-                // 分成两行会让表单下方堆积三层链接，主按钮的视觉终点被拉散；
-                // 而这两件事本来就是一对（一个是「用别的凭证登」、一个是「登不上怎么办」），
-                // 摆在同一行、各占一端，用户扫一眼就知道「下面这一栏是备选方案」。
-                // 顺序上「使用密码登录」在左：它是正向操作，先读到；
-                // 「忘记密码?」在右，是异常路径的兜底。
+                // 「使用密码登录」与「忘记密码?」并排一行（占位入口，保持原口径）。
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -347,9 +425,6 @@ fun LoginScreen(
                         text = "忘记密码?",
                         color = colors.accent,
                         underline = true,
-                        // v1.1.65：改用真实的「找回密码」页（通过短信验证码，仅界面演示）。
-                        // 此前走 `PlaceholderEntry.FORGOT_PASSWORD` 那张留空页，
-                        // 那个占位枚举项已随之删除（不留死枚举）。
                         onClick = onOpenForgotPassword
                     )
                 }
@@ -367,7 +442,7 @@ fun LoginScreen(
                     AuthSocialButton(
                         label = "微信",
                         colors = colors,
-                        // 微信登录不再进留空二级页，改为就地弹一句提示（需求：删除二级界面，改为消息提示）。
+                        // 微信登录不再进留空二级页，改为就地弹一句提示（原口径）。
                         onClick = { toast = "微信登录功能开发中" }
                     ) {
                         // 素材本身就是「绿底圆角方块 + 白气泡」，裁成圆形即可，颜色沿用素材自带的品牌绿。

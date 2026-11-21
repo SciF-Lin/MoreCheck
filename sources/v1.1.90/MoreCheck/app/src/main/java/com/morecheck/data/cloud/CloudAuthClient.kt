@@ -127,12 +127,18 @@ class CloudAuthClient(private val context: Context) : SessionProvider {
     /**
      * 提交验证码并完成登录 / 注册。
      *
-     * 新用户走注册（无需密码），老用户走登录——由 [OtpChallenge.isExistingUser]
+     * 新用户走注册（可同时设置密码），老用户走登录——由 [OtpChallenge.isExistingUser]
      * 决定，调用方不判断、也不把这个信息展示给用户。
      *
+     * @param password 仅**新用户注册**时使用：与验证令牌一起提交，账号从此可以用
+     *   手机号 + 密码登录。老用户传 null（改密码是另一条链路，需要旧密码 sudo）。
      * @return 登录后的会话（已持久化，[session] 同步发出）。
      */
-    suspend fun verifyCode(challenge: OtpChallenge, code: String): CloudSession {
+    suspend fun verifyCode(
+        challenge: OtpChallenge,
+        code: String,
+        password: String? = null
+    ): CloudSession {
         if (code.isBlank()) {
             cloudFail(
                 CloudError(
@@ -183,11 +189,56 @@ class CloudAuthClient(private val context: Context) : SessionProvider {
                 body = JSONObject().apply {
                     put("phone_number", challenge.phone)
                     put("verification_token", verificationToken)
+                    // 密码只在注册时提交；空值不写，避免把「没设密码」变成空密码账号。
+                    if (!password.isNullOrBlank()) put("password", password)
                 },
                 requireAuth = false
             )
         }
         val session = parseSession(sessionResponse.asJsonObject(), fallbackPhone = challenge.phone)
+        persist(session)
+        _session.value = session
+        return session
+    }
+
+    /**
+     * 手机号 + 密码登录。
+     *
+     * 与验证码登录共用同一个 `/v1/signin` 端点：服务端按 body 里带的是
+     * `verification_token` 还是 `password` 区分凭证类型。
+     *
+     * - 用户名必须是**规范化后**的手机号（`+86 138…`），与注册时服务端存的一致；
+     *   这里复用 [normalizePhone]，不接受调用方自己拼好的号码（否则拼成
+     *   `+86+86…` 会被判为账号不存在，界面却只显示「密码错误」，极难排查）。
+     * - 密码由服务端校验。失败时**不区分**「号码没注册」与「密码错」，
+     *   统一由界面展示一句「手机号或密码不正确」，避免账号存在性泄露。
+     *
+     * @throws CloudException 未注册 / 密码错（401、400）与网络异常都会抛出，
+     *   调用方用 [friendlyCloudMessage] 统一转成用户看得懂的文案。
+     */
+    suspend fun signInWithPassword(phone: String, password: String): CloudSession {
+        requireMainlandPhone(phone)
+        if (password.isBlank()) {
+            cloudFail(
+                CloudError(
+                    kind = CloudError.Kind.INVALID_REQUEST,
+                    message = "请输入密码",
+                    code = null,
+                    status = 0
+                )
+            )
+        }
+        val username = normalizePhone(phone)
+        val response = http.send(
+            method = "POST",
+            url = "${CloudConfig.AUTH_BASE}/v1/signin",
+            body = JSONObject().apply {
+                put("username", username)
+                put("password", password)
+            },
+            requireAuth = false
+        )
+        val session = parseSession(response.asJsonObject(), fallbackPhone = username)
         persist(session)
         _session.value = session
         return session

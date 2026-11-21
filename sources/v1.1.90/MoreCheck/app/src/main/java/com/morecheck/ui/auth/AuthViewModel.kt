@@ -342,5 +342,20 @@ class AuthViewModel(
  * 若仍按「必须 11 位才脱敏」处理，「我的」页会把用户输入的完整号码原样显示出来。
  * 长度 ≤ 2 时没有可遮蔽的中间段，原样返回（此时也不构成隐私暴露）。
  */
-internal fun maskPhone(phone: String): String =
-    if (phone.length <= 2) phone else "${phone.first()}****${phone.last()}"
+internal fun maskPhone(phone: String): String {
+    // 云端回来的号码是规范化后的 `+86 13812345678`，若按「首字符 + **** + 末字符」脱敏，
+    // 会显示成 `+****8`——既看不出是哪个号，也不像手机号。这里先剥掉国家码，
+    // 再按用户熟悉的 `138****5678` 展示。
+    val digits = phone.filter(Char::isDigit)
+    val local = when {
+        digits.length == 13 && digits.startsWith("86") -> digits.drop(2)
+        digits.length == 15 && digits.startsWith("0086") -> digits.drop(4)
+        else -> digits
+    }
+    return when {
+        local.length >= 8 -> "${local.take(3)}****${local.takeLast(4)}"
+        // 极短输入（本地演示 / 异常数据）：没有可遮蔽的中间段，原样返回。
+        phone.length <= 2 -> phone
+        else -> "${phone.first()}****${phone.last()}"
+    }
+}

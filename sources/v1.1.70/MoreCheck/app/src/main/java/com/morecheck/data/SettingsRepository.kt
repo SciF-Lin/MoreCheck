@@ -55,7 +55,6 @@ class SettingsRepository(private val context: Context) {
          */
         val MOMENTS_BADGE_ENABLED = booleanPreferencesKey("moments_badge_enabled")
         val PERM_CAMERA = booleanPreferencesKey("perm_camera_enabled")
-        val PERM_LOCATION = booleanPreferencesKey("perm_location_enabled")
         val PERM_NOTIFICATION = booleanPreferencesKey("perm_notification_enabled")
         val TIMER_SOUND_ENABLED = booleanPreferencesKey("timer_sound_enabled")
         val TIMER_SOUND_URI = stringPreferencesKey("timer_sound_uri")
@@ -246,9 +245,6 @@ class SettingsRepository(private val context: Context) {
     val cameraEnabled: Flow<Boolean> =
         context.dataStore.data.map { it[Keys.PERM_CAMERA] ?: false }
 
-    val locationEnabled: Flow<Boolean> =
-        context.dataStore.data.map { it[Keys.PERM_LOCATION] ?: false }
-
     val notificationEnabled: Flow<Boolean> =
         context.dataStore.data.map { it[Keys.PERM_NOTIFICATION] ?: false }
 
@@ -270,7 +266,6 @@ class SettingsRepository(private val context: Context) {
 
     private fun permissionKeyOf(id: String) = when (id) {
         "camera" -> Keys.PERM_CAMERA
-        "location" -> Keys.PERM_LOCATION
         "notification" -> Keys.PERM_NOTIFICATION
         else -> null
     }
@@ -422,6 +417,25 @@ class SettingsRepository(private val context: Context) {
      * 若合并还得让登录路径传一堆空值，语义反而含糊。
      * 这里一次性写入，避免「登录态已置位、资料还没落盘」的中间窗口被「我的信息」读到。
      */
+    /** 写入用户 ID（云端登录后本地缺 ID 时补一个展示用标识）。 */
+    suspend fun setUserId(userId: String) {
+        context.dataStore.edit { it[Keys.USER_ID] = userId }
+    }
+
+    /** 写入昵称；空串 = 删除该键（与云端同步的「有值才写」口径一致）。 */
+    suspend fun setNickname(nickname: String) {
+        context.dataStore.edit {
+            if (nickname.isBlank()) it.remove(Keys.NICKNAME) else it[Keys.NICKNAME] = nickname
+        }
+    }
+
+    /** 写入性别（`male` / `female`），口径同 [setNickname]。 */
+    suspend fun setGender(gender: String) {
+        context.dataStore.edit {
+            if (gender.isBlank()) it.remove(Keys.GENDER) else it[Keys.GENDER] = gender
+        }
+    }
+
     suspend fun setRegisteredProfile(
         phone: String,
         userId: String,

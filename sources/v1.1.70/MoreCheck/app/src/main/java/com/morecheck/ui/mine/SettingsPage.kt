@@ -102,10 +102,9 @@ fun SettingsPage(
     val autoStartOnBoot by viewModel.autoStartOnBoot.collectAsStateWithLifecycle()
     // 权限开关只用于在入口副标题里显示「已开启 N 项」，让用户不进二级页也能看到状态。
     val cameraEnabled by viewModel.cameraEnabled.collectAsStateWithLifecycle()
-    val locationEnabled by viewModel.locationEnabled.collectAsStateWithLifecycle()
     val notificationEnabled by viewModel.notificationEnabled.collectAsStateWithLifecycle()
 
-    val enabledPermissionCount = listOf(cameraEnabled, locationEnabled, notificationEnabled)
+    val enabledPermissionCount = listOf(cameraEnabled, notificationEnabled)
         .count { it }
 
     // 声音设置只用副标题汇总「响不响 / 用哪个铃声」。

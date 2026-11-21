@@ -112,9 +112,6 @@ enum class TabDestination(val route: String) {
     /** 二级页：实验室（由发现页的「实验室」入口推入）。 */
     Lab("lab"),
 
-    /** 二级页：实验室 → 天气（联网查询当地天气）。 */
-    Weather("weather"),
-
     /** 二级页：实验室 → 开发者选项（v1.1.64 新增）。 */
     DeveloperOptions("developer_options"),
 

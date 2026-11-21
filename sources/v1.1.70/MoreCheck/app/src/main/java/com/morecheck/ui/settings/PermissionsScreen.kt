@@ -101,7 +101,6 @@ fun PermissionsScreen(
 ) {
     val context = LocalContext.current
     val cameraEnabled by viewModel.cameraEnabled.collectAsStateWithLifecycle()
-    val locationEnabled by viewModel.locationEnabled.collectAsStateWithLifecycle()
     val notificationEnabled by viewModel.notificationEnabled.collectAsStateWithLifecycle()
 
     // 撤回隐私同意的倒计时弹窗状态：null = 不显示；非 null = 显示且已在倒计时。
@@ -119,7 +118,6 @@ fun PermissionsScreen(
     fun setEnabled(permission: AppPermission, enabled: Boolean) {
         when (permission) {
             AppPermission.CAMERA -> viewModel.setCameraEnabled(enabled)
-            AppPermission.LOCATION -> viewModel.setLocationEnabled(enabled)
             AppPermission.NOTIFICATION -> viewModel.setNotificationEnabled(enabled)
         }
     }
@@ -223,12 +221,6 @@ fun PermissionsScreen(
                         permission = AppPermission.CAMERA,
                         checked = cameraEnabled,
                         onToggle = { onToggle(AppPermission.CAMERA, it) }
-                    )
-                    PermissionDivider()
-                    PermissionRow(
-                        permission = AppPermission.LOCATION,
-                        checked = locationEnabled,
-                        onToggle = { onToggle(AppPermission.LOCATION, it) }
                     )
                     PermissionDivider()
                     PermissionRow(
@@ -493,7 +485,7 @@ private fun PermissionRow(
  * - 永久拒绝：系统框不会再出现了，只能引导去系统设置，否则用户会觉得「点了没反应」。
  *
  * `manifestPermissions` 是列表，而该 API 只能逐个权限判断，因此取第一个
- * （CAMERA / ACCESS_FINE_LOCATION / POST_NOTIFICATIONS，与申请时用的同一个）。
+ * （CAMERA / POST_NOTIFICATIONS，与申请时用的同一个）。
  */
 private fun isPermanentlyDenied(context: Context, permission: AppPermission): Boolean {
     val activity = context.findActivity() ?: return false
