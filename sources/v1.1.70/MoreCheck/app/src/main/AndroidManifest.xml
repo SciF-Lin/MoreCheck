@@ -376,6 +376,42 @@
         </activity-alias>
 
         <!--
+            ── v1.1.71 新增两套图标设计稿（清单 / 日历）────────────────────────
+
+            与既有八套同为「一套自适应图标 XML 对应一个 alias」，全部同口径：
+            enabled="false"（初始只有默认套启用）、roundIcon 必写、exported="true"。
+            两套前景都是透明底 PNG、背景是渐变 <shape> drawable，
+            详见各自的 res/mipmap-anydpi-v26/ic_launcher_<id>.xml。
+        -->
+        <activity-alias
+            android:name=".icon.Checklist"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_checklist"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_checklist"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".icon.Calendar"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_calendar"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_calendar"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!--
             拍照临时文件的 FileProvider（「智能体 → 拍照」用，v1.1.69 新增）。
 
             ## 为什么必须有它

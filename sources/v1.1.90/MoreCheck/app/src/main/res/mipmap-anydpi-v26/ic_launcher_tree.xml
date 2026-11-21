@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    「图标更改」内置图标之一：木函杉树（复用外部素材，v1.1.69 需求 2b）。
+
+    ## 素材来源与授权口径
+
+    前景 `@drawable/ic_fore_tree` 拷自「一个木函」（`com.One.WoodenLetter`，v7.19.1）
+    APK 内的品牌 Logo 资源（原资源名已混淆，包内路径 `res/r/E6`，432×432 透明底 PNG）。
+    分析报告见工作区 `E:\download\app\A_Tree\研究报告_一个木函.md`。
+
+    ⚠️ **这是一处需要知情的取舍**：该素材属第三方应用，本项目的定位是**自用 / 内部分发**
+    （见 `dist/install.ps1`，不上架应用商店），因此按"个人学习参考"使用；
+    若将来要公开分发，**必须**先替换为自己绘制的图案或取得授权。
+    这条注释就是留给未来那个改动者的显式提醒，不要静默沿用。
+
+    ## 为什么它适合做前景
+
+    原始 PNG 是**纯图形 + 四周透明**（没有自带底色、没有长阴影），
+    因此可以直接做自适应图标的 `foreground`，由背景层提供底色——
+    这与 `ic_icon_fore_*.xml` 那几个手绘矢量同构，九套风格统一。
+
+    ## ⚠️ 背景色必须**深**，不能用白（v1.1.69 实测修正）
+
+    这棵树的本体是**青绿渐变、平均亮度 224（近白）**，
+    最初配的纯白底只有 **1.35 : 1** 对比度，桌面上几乎看不见树形。
+    现已改为 `@color/ic_launcher_tree_background` = `#004D40`（Teal 900，7.29 : 1）。
+    取值理由与这次的教训见 `values/colors.xml` 里那段注释——
+    **换前景素材时务必重新量一次前景明度，不要沿用别的套的背景色。**
+
+    ## 与其它套的差异：前景是位图而非矢量
+
+    手绘那四套是 VectorDrawable（任意尺寸不失真、体积极小）；
+    本套是 PNG 位图（432×432 放在 `drawable-xxxhdpi`，即 4x 密度下 108dp，
+    正好是自适应图标前景的标准尺寸）。
+    自适应图标对前景的处理是按 108dp 铺开后取中心区域，位图在此尺寸下足够清晰，
+    因此**不强制**把它矢量化——矢量化的收益仅是体积，而重绘会失真。
+    已实测核过安全区：图形距中心最远 28.11（安全圆半径 33），
+    四角留白充足，任何遮罩下都不会被切到。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_tree_background" />
+    <foreground android:drawable="@drawable/ic_fore_tree" />
+</adaptive-icon>

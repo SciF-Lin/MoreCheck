@@ -1145,15 +1145,18 @@ private fun builtInIconResOf(id: String): Int = when (id) {
     // 背景刻意用深青（`#004D40`）——树本体近白，配白底实测几乎看不见。
     // 来源、授权边界与此处背景色的理由见 `res/mipmap-anydpi-v26/ic_launcher_tree.xml`。
     "tree" -> R.mipmap.ic_launcher_tree
+    // v1.1.71 新增两套：渐变背景 + 透明前景 PNG 的自适应图标。
+    "checklist" -> R.mipmap.ic_launcher_checklist
+    "calendar" -> R.mipmap.ic_launcher_calendar
     else -> 0
 }
 
 /**
  * 内置图标 id → 界面上显示的名字。
  *
- * 「default」显示为「默认」而不是「黑色」：这套图标的背景确实是黑的，
- * 但它的身份是**改造前的原始图标**（「恢复默认」要去的地方），
- * 叫「黑色」会让用户以为它只是四种颜色之一，弱化了「这是默认值」这件事。
+ * 「default」显示为「默认」：它的身份是**开机默认图标**（「恢复默认」要去的地方，
+ * v1.1.71 起外观为新设计的「蓝青渐变 + 进度环对勾」方案 A），
+ * 叫别的名字会弱化「这是默认值」这件事，也让「恢复默认」的指向不清楚。
  *
  * 新增四套一律用**图形名**（对勾 / 星标 / 火焰 / 叶片）而不是颜色名：
  * 它们的背景色各异，而用户是照着"哪张图"在选的；用颜色命名会出现
@@ -1174,6 +1177,8 @@ private fun builtInIconLabel(id: String): String = when (id) {
     "flame" -> "火焰"
     "leaf" -> "叶片"
     "tree" -> "杉树"
+    "checklist" -> "清单"
+    "calendar" -> "日历"
     else -> id
 }
 

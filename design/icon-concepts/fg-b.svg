@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="432" height="432">
+  <!-- 左上格：已完成（打勾）-->
+  <rect x="29" y="29" width="20" height="20" rx="5.5" fill="#FFF2E5"/>
+  <path d="M33.5,39 L37,42.5 L44.5,34.5" fill="none" stroke="#1A1D24"
+        stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 右上格：实心 -->
+  <rect x="59" y="29" width="20" height="20" rx="5.5" fill="#FFF2E5"/>
+  <!-- 左下格：实心 -->
+  <rect x="29" y="59" width="20" height="20" rx="5.5" fill="#FFF2E5"/>
+  <!-- 右下格：空心（待完成）-->
+  <rect x="59" y="59" width="20" height="20" rx="5.5" fill="none"
+        stroke="#FFF2E5" stroke-width="2.2"/>
+</svg>

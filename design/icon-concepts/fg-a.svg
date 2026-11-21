@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="432" height="432">
+  <!-- 进度环：近乎闭合，右上留缺口 -->
+  <circle cx="54" cy="54" r="25" fill="none" stroke="#FFFFFF" stroke-width="6"
+          stroke-linecap="round" stroke-dasharray="144 158" transform="rotate(-30 54 54)"/>
+  <!-- 缺口处的端点小圆 -->
+  <circle cx="73" cy="35" r="2.6" fill="#BFE9FF"/>
+  <!-- 中心对勾：打卡完成 -->
+  <path d="M44,55 L50.5,61.5 L64,47" fill="none" stroke="#FFFFFF" stroke-width="7"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

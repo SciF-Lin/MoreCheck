@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    「图标更改」新增：火焰那套自适应图标（v1.1.69 需求 2b）。
+
+    结构、坐标系与安全区的取舍与 `ic_launcher_check.xml` 完全一致，
+    见那个文件的注释与本目录四个 `@drawable/ic_icon_fore_*` 的 KDoc。
+
+    背景 `@color/ic_launcher_flame_background`（`#E53935`，Material Red 600）：
+    火是红的，这套的背景色不需要额外解释；与纯白前景对比度约 4.2 : 1。
+    `#E53935` 同时也是应用主题色 `AccentColor.RED` 的 seed，
+    所以它并不是新造的色值（前景换了、配色仍是产品认可过的）。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_flame_background" />
+    <foreground android:drawable="@drawable/ic_icon_fore_flame" />
+</adaptive-icon>

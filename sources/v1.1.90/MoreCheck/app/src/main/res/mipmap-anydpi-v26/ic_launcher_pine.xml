@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    「图标更改」内置图标之一：青杉（复用「一个木函」Logo 家族素材，本轮需求 8/11）。
+
+    ## 素材来源与授权口径（与 `ic_launcher_tree.xml` 完全同一批素材）
+
+    前景 `@drawable/ic_fore_pine` 拷自「一个木函」（`com.One.WoodenLetter`，v7.19.1）
+    APK 内的品牌 Logo 家族资源（原资源名已混淆，源文件
+    `E:\download\app\A_Tree\exported_images\icon_03_432x432.png`，
+    已裁切到与 `ic_fore_tree` 完全相同的 144×176 内容框再贴回 432×432 画布，
+    因此三张新前景的图形位置、大小与既有杉树那套**严格一致**）。
+
+    ⚠️ **授权边界**（同 tree 那套）：该素材属第三方应用，本项目自用 / 内部分发，
+    按"个人学习参考"使用；若将来要公开分发，**必须**先替换或取得授权。
+
+    ## 背景 `#E8ECEF`（浅冷灰）的取值依据（**量过前景才定的**，教训见 colors.xml）
+
+    本套前景的杉树本体是**青灰色**（平均 RGB 78,91,97、亮度 103，偏暗），
+    与 tree 那套"近白"正相反。暗前景配深底会糊成一片，因此这里取**浅**底：
+    `#E8ECEF` 与前景平均色的对比度实测约 **5.6 : 1**，与 tree 套的 7.29 : 1 同量级。
+    没用纯白 `#FFFFFF`（对比度 6.9 : 1 更高，但冷灰底与青灰树更同色系、观感更稳），
+    也没沿用任何既有套的背景色，让第十二套与其它套一眼可分。
+
+    ## ⚠️ 只放 `values/`，不放 `values-night/`
+
+    图标是安装期解析并缓存的美术资源，不随系统深色模式改变（理由同其它套）。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_pine_background" />
+    <foreground android:drawable="@drawable/ic_fore_pine" />
+</adaptive-icon>

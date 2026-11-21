@@ -1,0 +1,1138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<!-- MoreCheck 云同步（v3）：把云端拉下来的游戏存档灌进 localStorage。
+     必须在本页自身脚本读取 localStorage 之前执行，因此放在 <head> 最前面。
+     没有待灌入快照时整段静默跳过。 -->
+<script>
+(function(){try{var b=window.__CIM_GAME__;if(!b)return;var p=b.pendingState();if(p){var d=JSON.parse(p);for(var k in d){try{localStorage.setItem(k,d[k]);}catch(e){}}b.markApplied();}}catch(e){}})();
+</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1b2d">
+<title>数独 · 随机关卡</title>
+<style>
+/* SECTION: tokens */
+:root{
+  --bw: min(94vw, 468px);
+  --paper:#f7f3e9; --paper-2:#efe7d6;
+  --ink:#1c2a3a; --ink-soft:#5a6b7d; --line:#c3b79f; --line-strong:#3a4656;
+  --accent:#2f6f8f; --accent-2:#d9832f;
+  --sel:#cfe4f2; --peer:#eceff2; --same:#dcedf6; --bad:#e8b8b2; --note:#8b98a6;
+  --card:#ffffff; --card-2:#f2f0ea; --shadow:0 10px 30px rgba(20,30,45,.12);
+  --radius:18px;
+}
+html[data-theme="dark"]{
+  --paper:#131c28; --paper-2:#0e1621;
+  --ink:#e9eff6; --ink-soft:#9db0c4; --line:#33465c; --line-strong:#c8d6e4;
+  --accent:#5eb3d8; --accent-2:#f0a85c;
+  --sel:#22506b; --peer:#1a2534; --same:#20364a; --bad:#6b2f31; --note:#8ea3b8;
+  --card:#1a2534; --card-2:#151f2c; --shadow:0 12px 32px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:radial-gradient(120% 90% at 50% 0,var(--paper) 0,var(--paper-2) 100%);
+  color:var(--ink); min-height:100vh;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  -webkit-tap-highlight-color:transparent;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.app{max-width:1060px;margin:0 auto;padding:14px 14px 26px}
+
+/* SECTION: topbar */
+.topbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;margin-right:auto}
+.logo{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;
+  background:linear-gradient(140deg,var(--accent),var(--line-strong));color:#fff;font-weight:800;font-size:20px;
+  box-shadow:var(--shadow)}
+.brand h1{font-size:19px;margin:0;letter-spacing:.5px}
+.brand p{margin:1px 0 0;font-size:12px;color:var(--ink-soft)}
+.stat-group{display:flex;gap:8px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 10px;min-width:64px;text-align:center}
+.stat-k{display:block;font-size:11px;color:var(--ink-soft);letter-spacing:.5px}
+.stat-v{display:block;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.icon-btn{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--card);
+  color:var(--ink);font-size:17px;cursor:pointer}
+.icon-btn:active{transform:scale(.95)}
+
+/* SECTION: banner */
+.banner{margin-top:12px;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent-2);
+  border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px}
+.banner button{border:0;border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer}
+.banner .primary{background:var(--accent);color:#fff}
+.banner .ghost{background:var(--card-2);color:var(--ink)}
+
+/* SECTION: stage */
+.stage{display:flex;flex-direction:column;gap:16px;margin-top:16px}
+@media (min-width:840px){.stage{flex-direction:row;align-items:flex-start;gap:24px}.panel{flex:1 1 auto;max-width:420px}}
+.board-wrap{position:relative;width:var(--bw);max-width:100%}
+.board{width:var(--bw);max-width:100%;aspect-ratio:1;display:grid;
+  grid-template-columns:repeat(9,1fr);grid-template-rows:repeat(9,1fr);
+  background:var(--card);border:2px solid var(--line-strong);border-radius:14px;overflow:hidden;
+  box-shadow:var(--shadow);touch-action:manipulation}
+.cell{position:relative;border:0;margin:0;padding:0;background:transparent;cursor:pointer;
+  font:inherit;color:var(--ink);display:grid;place-items:center;
+  border-right:1px solid var(--line);border-bottom:1px solid var(--line);min-height:0}
+.cell:nth-child(9n){border-right:0}
+.cell:nth-child(n+73){border-bottom:0}
+.cell.boxr{border-right:2px solid var(--line-strong)}
+.cell.boxb{border-bottom:2px solid var(--line-strong)}
+.cell.peer{background:var(--peer)}
+.cell.same{background:var(--same)}
+.cell.sel{background:var(--sel);box-shadow:inset 0 0 0 2px var(--accent)}
+.cell.given{font-weight:800}
+.cell.given{color:var(--ink)}
+.cell.user{font-weight:700;color:var(--accent)}
+.cell.bad{background:var(--bad);color:#8f2b1c}
+html[data-theme="dark"] .cell.bad{color:#ffd7d2}
+.cell .v{font-size:min(32px,calc(var(--bw)/14.5));line-height:1;font-variant-numeric:tabular-nums;z-index:2}
+.cell .notes{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);
+  grid-template-rows:repeat(3,1fr);padding:8% 10%;color:var(--note);pointer-events:none}
+.cell .notes i{font-style:normal;font-size:calc(var(--bw)/44);text-align:center;align-self:center;line-height:1}
+.pause-cover{position:absolute;inset:0;border-radius:14px;background:color-mix(in srgb,var(--card) 82%,transparent);
+  backdrop-filter:blur(9px);display:grid;place-items:center;text-align:center;gap:6px;font-weight:700;color:var(--ink-soft)}
+
+/* SECTION: panel */
+.panel{display:flex;flex-direction:column;gap:12px}
+.seg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:var(--card-2);padding:5px;border-radius:12px}
+.seg button{border:0;background:transparent;color:var(--ink-soft);border-radius:9px;padding:9px 4px;font-size:13px;
+  font-weight:600;cursor:pointer}
+.seg button.on{background:var(--card);color:var(--accent);box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.row-label{font-size:11px;letter-spacing:1px;color:var(--ink-soft);margin-bottom:5px}
+.keypad{display:grid;grid-template-columns:repeat(9,1fr);gap:6px}
+@media (max-width:420px){.keypad{gap:4px}}
+.keypad button{position:relative;border:1px solid var(--line);background:var(--card);color:var(--ink);
+  border-radius:11px;padding:9px 0;font-size:min(21px,calc(var(--bw)/17));font-weight:700;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1.05;min-height:48px;height:auto;flex:0 0 auto}
+.keypad button small{font-size:10px;color:var(--ink-soft);font-weight:600}
+.keypad button.done{opacity:.35;pointer-events:none}
+.keypad button:active,.tools button:active{transform:scale(.96)}
+.tools{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.tools button,.actions button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;
+  padding:11px 8px;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;min-height:46px;
+  height:auto;flex:0 0 auto}
+.tools .on{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--card))}
+.actions{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.actions .primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.actions .warn{background:var(--accent-2);border-color:var(--accent-2);color:#1c2a3a;font-weight:700}
+.tip{font-size:12px;color:var(--ink-soft);line-height:1.6;background:var(--card);border:1px solid var(--line);
+  border-radius:12px;padding:10px 12px}
+.tip b{color:var(--ink)}
+
+/* SECTION: modal */
+.mask{position:fixed;inset:0;background:rgba(8,14,22,.55);display:grid;place-items:center;padding:18px;z-index:50}
+.sheet{width:min(430px,100%);max-height:82vh;overflow:auto;background:var(--card);border-radius:18px;
+  border:1px solid var(--line);box-shadow:var(--shadow);padding:18px}
+.sheet h2{margin:0 0 4px;font-size:19px}
+.sheet p.sub{margin:0 0 14px;font-size:13px;color:var(--ink-soft)}
+.slot{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:10px;
+  background:var(--card-2);margin-bottom:8px}
+.slot .meta{flex:1 1 auto;min-width:0}
+.slot .meta strong{display:block;font-size:14px}
+.slot .meta span{font-size:12px;color:var(--ink-soft)}
+.slot button{border:0;border-radius:9px;padding:8px 10px;font-size:12px;font-weight:600;cursor:pointer}
+.slot .use{background:var(--accent);color:#fff}
+.slot .del{background:transparent;color:#b4433a;border:1px solid var(--line)}
+.empty{font-size:13px;color:var(--ink-soft);text-align:center;padding:16px 0}
+.sheet .foot{display:flex;gap:8px;margin-top:12px}
+.sheet .foot button{flex:1;border:0;border-radius:12px;padding:12px;font-size:14px;font-weight:700;cursor:pointer}
+.sheet .foot .primary{background:var(--accent);color:#fff}
+.sheet .foot .ghost{background:var(--card-2);color:var(--ink)}
+.win-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}
+.win-stats div{background:var(--card-2);border-radius:12px;padding:10px;text-align:center}
+.win-stats b{display:block;font-size:18px}
+.win-stats span{font-size:11px;color:var(--ink-soft)}
+[hidden]{display:none!important}
+
+/* SECTION: toast */
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);
+  background:var(--line-strong);color:#fff;padding:10px 16px;border-radius:999px;font-size:13px;z-index:60;
+  box-shadow:var(--shadow);max-width:88vw;text-align:center}
+html[data-theme="dark"] .toast{background:#e9eff6;color:#131c28}
+.foot-note{margin-top:16px;font-size:11px;color:var(--ink-soft);text-align:center}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* SECTION: fallback — 旧内核浏览器不支持 color-mix 时的降级 */
+.tools .on{background:var(--card-2)}
+.pause-cover{background:var(--card);opacity:.94}
+@supports (color-mix(in srgb, #fff 50%, transparent)){
+  .pause-cover{background:color-mix(in srgb,var(--card) 82%,transparent);opacity:1}
+  .tools .on{background:color-mix(in srgb,var(--accent) 12%,var(--card))}
+}
+@media (max-width:360px){
+  :root{--bw:96vw}
+  .stat{min-width:56px;padding:5px 8px}
+  .brand p{display:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SECTION: header -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">数</span>
+      <div><h1>数独</h1><p id="diffLabel">随机关卡 · 中等</p></div>
+    </div>
+    <div class="stat-group">
+      <div class="stat"><span class="stat-k">用时</span><span class="stat-v" id="statTime">00:00</span></div>
+      <div class="stat"><span class="stat-k">失误</span><span class="stat-v" id="statMiss">0</span></div>
+      <div class="stat"><span class="stat-k">空格</span><span class="stat-v" id="statLeft">—</span></div>
+    </div>
+    <button class="icon-btn" id="themeBtn" title="切换深浅色">◐</button>
+  </header>
+
+  <!-- SECTION: resume -->
+  <div class="banner" id="resumeBanner" hidden>
+    <span id="resumeText">发现未完成对局</span>
+    <button class="primary" id="resumeYes">继续</button>
+    <button class="ghost" id="resumeNo">放弃并重开</button>
+  </div>
+
+  <main class="stage">
+    <!-- SECTION: board -->
+    <section class="board-wrap">
+      <div class="board" id="board" role="grid" aria-label="数独棋盘"></div>
+      <div class="pause-cover" id="pauseCover" hidden>
+        <div>已暂停<div style="font-size:12px;font-weight:500;margin-top:4px">点下方「继续」恢复对局</div></div>
+      </div>
+    </section>
+
+    <!-- SECTION: controls -->
+    <section class="panel">
+      <div>
+        <div class="row-label">难度</div>
+        <div class="seg" id="diffSeg">
+          <button data-diff="easy">入门</button>
+          <button data-diff="medium" class="on">中等</button>
+          <button data-diff="hard">困难</button>
+          <button data-diff="expert">专家</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="row-label">数字（下方小字为剩余个数）</div>
+        <div class="keypad" id="keypad" data-primary-action="填入数字"></div>
+      </div>
+
+      <div class="tools" id="tools">
+        <button id="undoBtn">↶ 撤销</button>
+        <button id="eraseBtn">⌫ 擦除</button>
+        <button id="noteBtn">✎ 笔记</button>
+        <button id="hintBtn">★ 提示</button>
+      </div>
+
+      <div class="actions">
+        <button class="primary" id="newBtn" data-primary-action="生成随机新关卡">⟳ 新对局</button>
+        <button id="pauseBtn">❙❙ 暂停</button>
+        <button id="saveBtn">▤ 保存进度</button>
+        <button id="loadBtn">▣ 存档管理</button>
+      </div>
+
+      <div class="tip">
+        <b>玩法</b>：点一个空格，再按数字填入；<b>笔记</b>模式可标记候选数。填满且不冲突即获胜。<br>
+        进度会自动保存在本浏览器，也可随时手动存档。手机竖屏、平板横屏都已适配。
+      </div>
+    </section>
+  </main>
+
+  <p class="foot-note">题目由浏览器实时随机生成，每局保证唯一解</p>
+</div>
+
+<!-- SECTION: overlays -->
+<div class="mask" id="mask" hidden><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+/* SECTION: core — 数独生成与求解（保证唯一解） */
+(function (global) {
+  'use strict';
+
+  var ROWS = [], COLS = [], BOXES = [], PEERS = [];
+
+  function buildUnits() {
+    var r, c, i, k, br, bc;
+    for (r = 0; r < 9; r++) {
+      var row = [];
+      for (c = 0; c < 9; c++) row.push(r * 9 + c);
+      ROWS.push(row);
+    }
+    for (c = 0; c < 9; c++) {
+      var col = [];
+      for (r = 0; r < 9; r++) col.push(r * 9 + c);
+      COLS.push(col);
+    }
+    for (br = 0; br < 3; br++) {
+      for (bc = 0; bc < 3; bc++) {
+        var box = [];
+        for (r = br * 3; r < br * 3 + 3; r++) {
+          for (c = bc * 3; c < bc * 3 + 3; c++) box.push(r * 9 + c);
+        }
+        BOXES.push(box);
+      }
+    }
+    for (i = 0; i < 81; i++) {
+      var set = {};
+      r = Math.floor(i / 9); c = i % 9;
+      for (k = 0; k < 9; k++) set[ROWS[r][k]] = 1;
+      for (k = 0; k < 9; k++) set[COLS[c][k]] = 1;
+      var b = Math.floor(r / 3) * 3 + Math.floor(c / 3);
+      for (k = 0; k < 9; k++) set[BOXES[b][k]] = 1;
+      delete set[i];
+      PEERS.push(Object.keys(set).map(Number));
+    }
+  }
+  buildUnits();
+
+  function shuffle(arr) {
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+    }
+    return arr;
+  }
+
+  /* 随机回溯生成一张完整终盘 */
+  function solveFill(grid, pos) {
+    if (pos === undefined) {
+      pos = -1;
+      for (var i = 0; i < 81; i++) { if (grid[i] === 0) { pos = i; break; } }
+      if (pos === -1) return true;
+    }
+    var digits = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    var peers = PEERS[pos];
+    for (var d = 0; d < 9; d++) {
+      var v = digits[d], ok = true;
+      for (var p = 0; p < peers.length; p++) {
+        if (grid[peers[p]] === v) { ok = false; break; }
+      }
+      if (!ok) continue;
+      grid[pos] = v;
+      if (solveFill(grid)) return true;
+      grid[pos] = 0;
+    }
+    return false;
+  }
+
+  /* 候选数（按位掩码） */
+  function candidates(grid, pos) {
+    var used = 0, peers = PEERS[pos];
+    for (var p = 0; p < peers.length; p++) {
+      var v = grid[peers[p]];
+      if (v) used |= (1 << v);
+    }
+    var mask = 0;
+    for (var d = 1; d <= 9; d++) if (!(used & (1 << d))) mask |= (1 << d);
+    return mask;
+  }
+
+  /* 解的个数，最多数到 limit（用于唯一解判定） */
+  function countSolutions(grid, limit) {
+    limit = limit || 2;
+    var best = -1, bestMask = 0, bestCount = 10, empties = 0;
+    for (var i = 0; i < 81; i++) {
+      if (grid[i] !== 0) continue;
+      empties++;
+      var m = candidates(grid, i), n = 0;
+      for (var d = 1; d <= 9; d++) if (m & (1 << d)) n++;
+      if (n === 0) return 0;
+      if (n < bestCount) { bestCount = n; best = i; bestMask = m; }
+    }
+    if (empties === 0) return 1;
+    var total = 0;
+    for (var v = 1; v <= 9 && total < limit; v++) {
+      if (!(bestMask & (1 << v))) continue;
+      grid[best] = v;
+      total += countSolutions(grid, limit - total);
+      grid[best] = 0;
+      if (total >= limit) break;
+    }
+    return total;
+  }
+
+  function hasConflict(grid) {
+    for (var i = 0; i < 81; i++) {
+      if (!grid[i]) continue;
+      var peers = PEERS[i];
+      for (var p = 0; p < peers.length; p++) {
+        if (grid[peers[p]] === grid[i]) return true;
+      }
+    }
+    return false;
+  }
+
+  /* 按目标提示数挖洞，每步校验唯一解 */
+  function dig(solution, targetClues, budget) {
+    var grid = solution.slice();
+    var clues = 81;
+    var order = shuffle(range(81));
+    var passes = 0, guard = budget || 2600;
+    while (clues > targetClues && passes < 6 && guard > 0) {
+      var changed = false;
+      for (var k = 0; k < order.length && clues > targetClues; k++) {
+        var i = order[k];
+        if (grid[i] === 0) continue;
+        guard--;
+        var keep = grid[i];
+        grid[i] = 0;
+        if (countSolutions(grid, 2) === 1) { clues--; changed = true; }
+        else grid[i] = keep;
+      }
+      passes++;
+      if (!changed) break;
+      order = shuffle(range(81));
+    }
+    return { grid: grid, clues: clues };
+  }
+
+  function range(n) { var a = []; for (var i = 0; i < n; i++) a.push(i); return a; }
+
+  var DIFFICULTY = {
+    easy:   { name: '入门', clues: 44 },
+    medium: { name: '中等', clues: 36 },
+    hard:   { name: '困难', clues: 30 },
+    expert: { name: '专家', clues: 26 }
+  };
+
+  /* 生成一关：随机终盘 + 唯一解题面 */
+  function makeLevel(diffKey) {
+    var cfg = DIFFICULTY[diffKey] || DIFFICULTY.medium;
+    var solution, attempt = 0;
+    do {
+      solution = new Array(81).fill(0);
+      solveFill(solution);
+      attempt++;
+    } while (hasConflict(solution) && attempt < 5);
+
+    var target = cfg.clues;
+    if (diffKey === 'expert') target = attempt < 2 ? 25 : 27;
+    var d = dig(solution, target, diffKey === 'expert' ? 3200 : 2400);
+    /* 极端情况下保底可玩：至少留够提示数 */
+    if (d.clues < target && diffKey === 'easy') {
+      var d2 = dig(solution, cfg.clues, 2400);
+      if (d2.clues > d.clues) d = d2;
+    }
+    return {
+      puzzle: d.grid,
+      solution: solution,
+      clues: d.clues,
+      difficulty: diffKey,
+      difficultyName: cfg.name
+    };
+  }
+
+  global.SudokuCore = {
+    makeLevel: makeLevel,
+    DIFFICULTY: DIFFICULTY,
+    peersOf: function (i) { return PEERS[i]; },
+    boxOf: function (i) { return Math.floor(Math.floor(i / 9) / 3) * 3 + Math.floor((i % 9) / 3); },
+    maskOf: candidates,
+    isComplete: function (grid) {
+      for (var i = 0; i < 81; i++) if (grid[i] === 0) return false;
+      return !hasConflict(grid);
+    },
+    conflictSet: function (grid) {
+      var bad = {};
+      for (var i = 0; i < 81; i++) {
+        if (!grid[i]) continue;
+        var peers = PEERS[i];
+        for (var p = 0; p < peers.length; p++) {
+          if (grid[peers[p]] === grid[i]) { bad[i] = 1; bad[peers[p]] = 1; }
+        }
+      }
+      return bad;
+    }
+  };
+})(window);
+
+</script>
+<script>
+/* SECTION: store — 当前浏览器本地保存（自动进度 + 手动存档 + 偏好） */
+(function (global) {
+  'use strict';
+
+  var AUTO_KEY = 'sudoku.auto.v1';
+  var SAVES_KEY = 'sudoku.saves.v1';
+  var PREF_KEY = 'sudoku.pref.v1';
+  var MAX_SAVES = 3;
+  var seq = 0;
+
+  /* 同一毫秒内连续存档也要保证编号唯一 */
+  function makeId() {
+    seq++;
+    return 's' + Date.now().toString(36) + '-' + seq.toString(36) +
+      '-' + Math.floor(Math.random() * 1e6).toString(36);
+  }
+
+  function read(key, fallback) {
+    try {
+      var raw = global.localStorage.getItem(key);
+      if (!raw) return fallback;
+      var obj = JSON.parse(raw);
+      return obj == null ? fallback : obj;
+    } catch (e) { return fallback; }
+  }
+  function write(key, val) {
+    try { global.localStorage.setItem(key, JSON.stringify(val)); return true; }
+    catch (e) { return false; }
+  }
+  function remove(key) {
+    try { global.localStorage.removeItem(key); } catch (e) {}
+  }
+
+  function okState(s) {
+    return !!(s && s.puzzle && s.puzzle.length === 81 && s.solution && s.solution.length === 81
+      && s.given && s.given.length === 81);
+  }
+
+  global.SudokuStore = {
+    MAX_SAVES: MAX_SAVES,
+
+    loadAuto: function () {
+      var s = read(AUTO_KEY, null);
+      return okState(s) ? s : null;
+    },
+    saveAuto: function (s) { return okState(s) ? write(AUTO_KEY, s) : false; },
+    clearAuto: function () { remove(AUTO_KEY); },
+
+    loadSaves: function () {
+      var list = read(SAVES_KEY, []);
+      if (!Array.isArray(list)) return [];
+      return list.filter(okState).slice(0, MAX_SAVES);
+    },
+    /* 新增/覆盖一个存档位，返回新的列表 */
+    addSave: function (s) {
+      if (!okState(s)) return { ok: false, list: this.loadSaves(), reason: '存档内容无效' };
+      var list = this.loadSaves();
+      var stamp = {
+        id: makeId(),
+        savedAt: Date.now(),
+        puzzle: s.puzzle.slice(),
+        board: (s.board || s.puzzle).slice(),
+        solution: s.solution.slice(),
+        given: s.given.slice(),
+        notes: s.notes,
+        history: (s.history || []).slice(-400),
+        elapsedMs: s.elapsedMs || 0,
+        mistakes: s.mistakes || 0,
+        hintsUsed: s.hintsUsed || 0,
+        difficulty: s.difficulty,
+        difficultyName: s.difficultyName,
+        clues: s.clues,
+        status: s.status || 'playing'
+      };
+      list.unshift(stamp);
+      if (list.length > MAX_SAVES) list.length = MAX_SAVES;
+      var saved = write(SAVES_KEY, list);
+      return { ok: saved, list: list, reason: saved ? '' : '浏览器存储不可用或被占满' };
+    },
+    deleteSave: function (id) {
+      var list = this.loadSaves().filter(function (x) { return x.id !== id; });
+      write(SAVES_KEY, list);
+      return list;
+    },
+
+    loadPref: function () {
+      var p = read(PREF_KEY, {});
+      return { theme: p.theme === 'dark' ? 'dark' : 'light', noteMode: !!p.noteMode };
+    },
+    savePref: function (p) { return write(PREF_KEY, p || {}); }
+  };
+})(window);
+
+</script>
+<script>
+/* SECTION: game — 状态、渲染与交互 */
+(function () {
+  'use strict';
+
+  var Core = window.SudokuCore, Store = window.SudokuStore;
+
+  /* SECTION: state */
+  var S = {
+    difficulty: 'medium',
+    difficultyName: '中等',
+    clues: 0,
+    puzzle: new Array(81).fill(0),   // 题面（0 为空）
+    solution: new Array(81).fill(0),
+    given: new Array(81).fill(false),
+    board: new Array(81).fill(0),    // 当前填入值
+    notes: {},                       // index -> number(位掩码)
+    history: [],                     // 操作栈
+    selected: -1,
+    mistakes: 0,
+    hintsUsed: 0,
+    elapsedMs: 0,
+    running: false,
+    paused: false,
+    finished: false,
+    noteMode: false,
+    generating: false
+  };
+  var timerId = null, lastTick = 0, autoDelay = null;
+
+  /* SECTION: dom */
+  var $ = function (id) { return document.getElementById(id); };
+  var boardEl = $('board'), keypadEl = $('keypad');
+  var cellEls = [], noteEls = [], valEls = [];
+
+  function buildBoard() {
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < 81; i++) {
+      var r = Math.floor(i / 9), c = i % 9;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'cell';
+      btn.dataset.i = i;
+      btn.setAttribute('role', 'gridcell');
+      btn.setAttribute('aria-label', '第' + (r + 1) + '行第' + (c + 1) + '列');
+      if (c % 3 === 2 && c !== 8) btn.classList.add('boxr');
+      if (r % 3 === 2 && r !== 8) btn.classList.add('boxb');
+      var v = document.createElement('span'); v.className = 'v';
+      var nt = document.createElement('span'); nt.className = 'notes'; nt.hidden = true;
+      for (var k = 0; k < 9; k++) nt.appendChild(document.createElement('i'));
+      btn.appendChild(v); btn.appendChild(nt);
+      frag.appendChild(btn);
+      cellEls.push(btn); valEls.push(v); noteEls.push(nt);
+    }
+    boardEl.appendChild(frag);
+  }
+
+  function buildKeypad() {
+    for (var d = 1; d <= 9; d++) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.dataset.d = d;
+      b.innerHTML = '<span>' + d + '</span><small>9</small>';
+      keypadEl.appendChild(b);
+    }
+  }
+
+  /* SECTION: render */
+  function render() {
+    var sel = S.selected;
+    var selR = sel >= 0 ? Math.floor(sel / 9) : -1;
+    var selC = sel >= 0 ? sel % 9 : -1;
+    var selB = sel >= 0 ? Core.boxOf(sel) : -1;
+    var selVal = sel >= 0 ? S.board[sel] : 0;
+    var bad = Core.conflictSet(S.board);
+
+    for (var i = 0; i < 81; i++) {
+      var el = cellEls[i], v = S.board[i], r = Math.floor(i / 9), c = i % 9;
+      el.className = 'cell'
+        + (c % 3 === 2 && c !== 8 ? ' boxr' : '')
+        + (r % 3 === 2 && r !== 8 ? ' boxb' : '');
+      if (S.given[i]) el.classList.add('given');
+      else if (v) el.classList.add('user');
+      if (bad[i] && v) el.classList.add('bad');
+      if (i === sel) el.classList.add('sel');
+      else if (v && selVal && v === selVal) el.classList.add('same');
+      else if (sel >= 0 && (r === selR || c === selC || Core.boxOf(i) === selB)) el.classList.add('peer');
+
+      valEls[i].textContent = v ? String(v) : '';
+      var m = S.notes[i] || 0;
+      if (v || !m) {
+        noteEls[i].hidden = true;
+      } else {
+        noteEls[i].hidden = false;
+        var kids = noteEls[i].children;
+        for (var d = 1; d <= 9; d++) kids[d - 1].textContent = (m & (1 << d)) ? d : '';
+      }
+    }
+    renderKeypad();
+    renderStats();
+  }
+
+  function renderKeypad() {
+    var left = [];
+    for (var d = 1; d <= 9; d++) {
+      var cnt = 0;
+      for (var i = 0; i < 81; i++) if (S.board[i] === d) cnt++;
+      left[d] = Math.max(0, 9 - cnt);
+      var btn = keypadEl.children[d - 1];
+      btn.classList.toggle('done', left[d] === 0);
+      btn.querySelector('small').textContent = left[d];
+    }
+  }
+
+  function renderStats() {
+    var empty = 0;
+    for (var i = 0; i < 81; i++) if (!S.board[i]) empty++;
+    $('statMiss').textContent = String(S.mistakes);
+    $('statLeft').textContent = S.finished ? '0' : String(empty);
+    $('diffLabel').textContent = '随机关卡 · ' + S.difficultyName + ' · 提示数 ' + S.clues;
+    $('noteBtn').classList.toggle('on', S.noteMode);
+    $('pauseBtn').textContent = S.paused ? '▶ 继续' : '❙❙ 暂停';
+    $('pauseCover').hidden = !S.paused;
+  }
+
+  /* SECTION: timer */
+  function startTimer() {
+    stopTimer();
+    if (S.finished || S.paused) return;
+    S.running = true;
+    lastTick = Date.now();
+    timerId = setInterval(function () {
+      var now = Date.now();
+      S.elapsedMs += now - lastTick;
+      lastTick = now;
+      $('statTime').textContent = fmt(S.elapsedMs);
+    }, 250);
+  }
+  function stopTimer() {
+    S.running = false;
+    if (timerId) { clearInterval(timerId); timerId = null; }
+  }
+  function fmt(ms) {
+    var t = Math.floor(ms / 1000), h = Math.floor(t / 3600);
+    var m = Math.floor((t % 3600) / 60), s = t % 60;
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return (h ? pad(h) + ':' : '') + pad(m) + ':' + pad(s);
+  }
+
+  /* SECTION: persist */
+  function snapshot() {
+    return {
+      puzzle: S.puzzle.slice(), board: S.board.slice(),
+      solution: S.solution.slice(), given: S.given.slice(),
+      notes: S.notes, history: S.history.slice(-400), elapsedMs: S.elapsedMs,
+      mistakes: S.mistakes, hintsUsed: S.hintsUsed,
+      difficulty: S.difficulty, difficultyName: S.difficultyName, clues: S.clues,
+      status: S.finished ? 'won' : 'playing'
+    };
+  }
+  function applySnapshot(s) {
+    S.difficulty = s.difficulty && Core.DIFFICULTY[s.difficulty] ? s.difficulty : 'medium';
+    S.difficultyName = s.difficultyName || Core.DIFFICULTY[S.difficulty].name;
+    S.puzzle = s.puzzle.slice(); S.solution = s.solution.slice();
+    S.given = s.given.slice();
+    /* 题面为基准，叠加已填盘面 */
+    S.board = S.puzzle.slice();
+    if (Array.isArray(s.board) && s.board.length === 81) {
+      for (var i = 0; i < 81; i++) {
+        if (!S.given[i] && s.board[i] >= 1 && s.board[i] <= 9) S.board[i] = s.board[i];
+      }
+    }
+    S.notes = s.notes && typeof s.notes === 'object' ? s.notes : {};
+    S.history = Array.isArray(s.history) ? s.history.slice(-400) : [];
+    S.elapsedMs = s.elapsedMs || 0; S.mistakes = s.mistakes || 0;
+    S.hintsUsed = s.hintsUsed || 0; S.clues = s.clues || 0;
+    S.finished = s.status === 'won';
+    S.paused = false; S.selected = -1;
+    syncDiffSeg();
+    $('statTime').textContent = fmt(S.elapsedMs);
+  }
+  function queueAuto() {
+    if (autoDelay) clearTimeout(autoDelay);
+    autoDelay = setTimeout(function () {
+      autoDelay = null;
+      if (!Store.saveAuto(snapshot())) toast('浏览器存储不可用，本局无法自动保存');
+    }, 500);
+  }
+  function flushAuto() { if (autoDelay) { clearTimeout(autoDelay); autoDelay = null; } Store.saveAuto(snapshot()); }
+
+  /* SECTION: level flow */
+  function newLevel(diff) {
+    if (S.generating) return;
+    S.generating = true;
+    S.difficulty = diff || S.difficulty;
+    S.difficultyName = Core.DIFFICULTY[S.difficulty].name;
+    syncDiffSeg();
+    $('newBtn').disabled = true;
+    $('newBtn').textContent = '生成中…';
+    /* 让loading先绘制，再同步生成 */
+    setTimeout(function () {
+      var lv;
+      try { lv = Core.makeLevel(S.difficulty); }
+      catch (e) { lv = null; }
+      S.generating = false;
+      $('newBtn').disabled = false;
+      $('newBtn').textContent = '⟳ 新对局';
+      if (!lv) { toast('生成失败，请重试'); return; }
+      S.puzzle = lv.puzzle; S.solution = lv.solution;
+      S.given = lv.puzzle.map(function (v) { return v !== 0; });
+      S.board = lv.puzzle.slice();
+      S.notes = {}; S.history = []; S.selected = -1;
+      S.mistakes = 0; S.hintsUsed = 0; S.elapsedMs = 0;
+      S.clues = lv.clues; S.finished = false; S.paused = false;
+      $('statTime').textContent = '00:00';
+      render(); queueAuto(); startTimer();
+      toast('已生成新的「' + lv.difficultyName + '」随机关卡（提示 ' + lv.clues + ' 个）');
+    }, 40);
+  }
+
+  function syncDiffSeg() {
+    var btns = $('diffSeg').children;
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('on', btns[i].dataset.diff === S.difficulty);
+    }
+  }
+
+  /* SECTION: actions */
+  function push(op) {
+    S.history.push(op);
+    if (S.history.length > 800) S.history.shift();
+  }
+
+  function setCellVal(i, val) {
+    if (S.given[i] || S.finished || S.paused) return;
+    var old = S.board[i];
+    if (S.noteMode && val) {
+      if (old) { toast('该格已有数字，请先擦除'); return; }
+      var m = S.notes[i] || 0;
+      if (m & (1 << val)) S.notes[i] = m & ~(1 << val);
+      else S.notes[i] = m | (1 << val);
+      push({ t: 'note', i: i, prev: m, next: S.notes[i] });
+      if (!S.notes[i]) delete S.notes[i];
+      render(); queueAuto(); return;
+    }
+    if (old === val) return;
+    S.board[i] = val;
+    if (S.notes[i]) delete S.notes[i];
+    clearPeerNotes(i, val);
+    push({ t: 'val', i: i, prev: old, next: val });
+    if (val && val !== S.solution[i]) {
+      S.mistakes++;
+      toast('第 ' + (Math.floor(i / 9) + 1) + ' 行 ' + ((i % 9) + 1) + ' 列与规则冲突，已标红');
+    }
+    render(); queueAuto(); checkWin();
+  }
+
+  function clearPeerNotes(i, val) {
+    if (!val) return;
+    var peers = Core.peersOf(i);
+    for (var p = 0; p < peers.length; p++) {
+      var q = peers[p], m = S.notes[q];
+      if (m && (m & (1 << val))) {
+        m &= ~(1 << val);
+        if (m) S.notes[q] = m; else delete S.notes[q];
+      }
+    }
+  }
+
+  function undo() {
+    var op = S.history.pop();
+    if (!op) { toast('没有可撤销的操作'); return; }
+    if (op.t === 'val') {
+      S.board[op.i] = op.prev;
+      /* 撤销一次错误填入时，同时回退失误计数 */
+      if (op.next && op.next !== S.solution[op.i]) S.mistakes = Math.max(0, S.mistakes - 1);
+    } else if (op.t === 'hint') {
+      S.board[op.i] = op.prev || 0;
+      S.hintsUsed = Math.max(0, S.hintsUsed - 1);
+    } else if (op.t === 'note') {
+      if (op.prev) S.notes[op.i] = op.prev; else delete S.notes[op.i];
+    }
+    render(); queueAuto();
+  }
+
+  function erase() {
+    var i = S.selected;
+    if (i < 0) { toast('先点一个格子'); return; }
+    if (S.given[i]) { toast('题面数字不能擦除'); return; }
+    if (S.board[i] || S.notes[i]) {
+      var oldV = S.board[i], oldN = S.notes[i] || 0;
+      S.board[i] = 0; delete S.notes[i];
+      push({ t: 'val', i: i, prev: oldV, next: 0 });
+      if (oldN) S.notes[i] = oldN;
+      render(); queueAuto();
+    }
+  }
+
+  function hint() {
+    if (S.finished || S.paused) return;
+    var target = -1;
+    if (S.selected >= 0 && !S.given[S.selected] && !S.board[S.selected]) target = S.selected;
+    if (target < 0) {
+      var wrong = [];
+      for (var i = 0; i < 81; i++) {
+        if (S.given[i]) continue;
+        if (S.board[i] && S.board[i] !== S.solution[i]) wrong.push(i);
+      }
+      if (wrong.length) target = wrong[Math.floor(Math.random() * wrong.length)];
+      else {
+        var empties = [];
+        for (var j = 0; j < 81; j++) if (!S.board[j]) empties.push(j);
+        if (!empties.length) { toast('盘面已满'); return; }
+        target = empties[Math.floor(Math.random() * empties.length)];
+      }
+    }
+    var old = S.board[target];
+    S.board[target] = S.solution[target];
+    delete S.notes[target];
+    clearPeerNotes(target, S.solution[target]);
+    push({ t: 'hint', i: target, prev: old, next: S.solution[target] });
+    S.hintsUsed++; S.selected = target;
+    render(); queueAuto(); checkWin();
+    toast('已帮你填好这一格');
+  }
+
+  function checkWin() {
+    if (S.finished) return;
+    if (!Core.isComplete(S.board)) return;
+    S.finished = true; stopTimer(); flushAuto();
+    render(); showWin();
+  }
+
+  /* SECTION: overlays */
+  var mask = $('mask'), sheet = $('sheet');
+  function openSheet(html) { sheet.innerHTML = html; mask.hidden = false; }
+  function closeSheet() { mask.hidden = true; sheet.innerHTML = ''; }
+
+  function showWin() {
+    var rate = S.mistakes === 0 && S.hintsUsed === 0 ? '完美通关' :
+      (S.mistakes <= 2 && S.hintsUsed <= 1 ? '表现不错' : '顺利收官');
+    openSheet(
+      '<h2>恭喜通关</h2>' +
+      '<p class="sub">' + S.difficultyName + ' · ' + rate + '</p>' +
+      '<div class="win-stats">' +
+      '<div><b>' + fmt(S.elapsedMs) + '</b><span>用时</span></div>' +
+      '<div><b>' + S.mistakes + '</b><span>失误</span></div>' +
+      '<div><b>' + S.hintsUsed + '</b><span>提示</span></div>' +
+      '</div>' +
+      '<p class="sub" style="margin-bottom:0">再来一局会更难还是更简单？换个难度继续。</p>' +
+      '<div class="foot"><button class="ghost" data-act="stay">留在本局</button>' +
+      '<button class="primary" data-act="next">再来一局</button></div>'
+    );
+  }
+
+  function timeAgo(ts) {
+    var d = new Date(ts);
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+      ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  /* 存档内 given 为题面给数，board 为当时已填盘面 */
+  function leftOf(s) {
+    var filled = 0, b = s.board || s.puzzle;
+    for (var i = 0; i < 81; i++) if (s.given[i] || b[i]) filled++;
+    return 81 - filled;
+  }
+
+  function openSaves() {
+    var list = Store.loadSaves();
+    var html = '<h2>存档管理</h2><p class="sub">最多保存 ' + Store.MAX_SAVES + ' 个手动存档，保存在当前浏览器。</p>';
+    if (!list.length) html += '<div class="empty">还没有手动存档，点「保存进度」建立第一个。</div>';
+    for (var i = 0; i < list.length; i++) {
+      var s = list[i];
+      var left = leftOf(s);
+      html += '<div class="slot"><div class="meta">' +
+        '<strong>' + (s.difficultyName || '数独') + ' · ' + (s.status === 'won' ? '已完成' : '剩余 ' + left + ' 格') + '</strong>' +
+        '<span>' + timeAgo(s.savedAt) + ' · 用时 ' + fmt(s.elapsedMs || 0) + ' · 失误 ' + (s.mistakes || 0) + '</span>' +
+        '</div><button class="use" data-act="use" data-id="' + s.id + '">读取</button>' +
+        '<button class="del" data-act="del" data-id="' + s.id + '">删除</button></div>';
+    }
+    html += '<div class="foot"><button class="primary" data-act="closeSaves">关闭</button></div>';
+    openSheet(html);
+  }
+
+  function doSave() {
+    if (S.finished) { toast('本局已完成，直接开新局更有意思'); return; }
+    var res = Store.addSave(snapshot());
+    toast(res.ok ? '已保存存档（' + res.list.length + '/' + Store.MAX_SAVES + '）' : (res.reason || '保存失败'));
+  }
+
+  function loadSave(id) {
+    var list = Store.loadSaves();
+    var s = null;
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) s = list[i];
+    if (!s) { toast('存档不存在'); return; }
+    applySnapshot(s);
+    closeSheet(); render(); queueAuto();
+    if (!S.finished) startTimer();
+    toast('已读取存档，继续挑战');
+  }
+
+  var toastEl = $('toast'), toastTimer = null;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.hidden = false;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.hidden = true; }, 2400);
+  }
+
+  /* SECTION: events */
+  boardEl.addEventListener('click', function (e) {
+    var cell = e.target.closest('.cell');
+    if (!cell) return;
+    if (S.paused || S.finished) return;
+    var i = Number(cell.dataset.i);
+    S.selected = i;
+    if (S.given[i] && S.noteMode) toast('题面格子不可写笔记');
+    render();
+  });
+
+  keypadEl.addEventListener('click', function (e) {
+    var btn = e.target.closest('button');
+    if (!btn) return;
+    var d = Number(btn.dataset.d);
+    if (S.selected < 0) { toast('先点一个格子'); return; }
+    if (S.paused || S.finished) return;
+    setCellVal(S.selected, d);
+  });
+
+  $('diffSeg').addEventListener('click', function (e) {
+    var btn = e.target.closest('button');
+    if (!btn) return;
+    var d = btn.dataset.diff;
+    if (d === S.difficulty) { toast('当前已是「' + Core.DIFFICULTY[d].name + '」'); return; }
+    flushAuto();
+    newLevel(d);
+  });
+
+  $('undoBtn').addEventListener('click', undo);
+  $('eraseBtn').addEventListener('click', erase);
+  $('hintBtn').addEventListener('click', hint);
+  $('noteBtn').addEventListener('click', function () {
+    S.noteMode = !S.noteMode;
+    Store.savePref({ theme: document.documentElement.dataset.theme, noteMode: S.noteMode });
+    render();
+    toast(S.noteMode ? '笔记模式已开启：按数字标记候选' : '笔记模式已关闭：按数字直接填入');
+  });
+  $('newBtn').addEventListener('click', function () { flushAuto(); newLevel(S.difficulty); });
+  $('pauseBtn').addEventListener('click', function () {
+    if (S.finished) { toast('本局已完成'); return; }
+    S.paused = !S.paused;
+    if (S.paused) { stopTimer(); flushAuto(); }
+    else { startTimer(); }
+    renderStats();
+  });
+  $('saveBtn').addEventListener('click', function () { flushAuto(); doSave(); });
+  $('loadBtn').addEventListener('click', function () { flushAuto(); openSaves(); });
+
+  $('themeBtn').addEventListener('click', function () {
+    var dark = document.documentElement.dataset.theme === 'dark';
+    document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+    Store.savePref({ theme: dark ? 'light' : 'dark', noteMode: S.noteMode });
+  });
+
+  mask.addEventListener('click', function (e) {
+    var btn = e.target.closest('button');
+    if (!btn) { if (e.target === mask) closeSheet(); return; }
+    var act = btn.dataset.act, id = btn.dataset.id;
+    if (act === 'closeSaves' || act === 'stay') closeSheet();
+    else if (act === 'next') { closeSheet(); newLevel(S.difficulty); }
+    else if (act === 'use') loadSave(id);
+    else if (act === 'del') {
+      Store.deleteSave(id); openSaves(); toast('已删除该存档');
+    }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (!mask.hidden) { if (e.key === 'Escape') closeSheet(); return; }
+    if (S.paused || S.finished) return;
+    var k = e.key;
+    if (/^[1-9]$/.test(k)) {
+      if (S.selected >= 0) setCellVal(S.selected, Number(k));
+      e.preventDefault(); return;
+    }
+    if (k === 'Backspace' || k === 'Delete' || k === '0') { erase(); e.preventDefault(); return; }
+    if (k === 'n' || k === 'N') { $('noteBtn').click(); return; }
+    if (k === 'u' || k === 'z' || k === 'Z') { undo(); return; }
+    if (k === 'h' || k === 'H') { hint(); return; }
+    if (k === 'Tab') {
+      e.preventDefault();
+      var step = e.shiftKey ? -1 : 1, i = S.selected;
+      for (var t = 0; t < 81; t++) {
+        i = (i + step + 81) % 81;
+        if (!S.given[i] && !S.board[i]) break;
+      }
+      S.selected = i; render(); return;
+    }
+    if (k.indexOf('Arrow') === 0) {
+      e.preventDefault();
+      if (S.selected < 0) { S.selected = 0; render(); return; }
+      var r = Math.floor(S.selected / 9), c = S.selected % 9;
+      if (k === 'ArrowUp') r = (r + 8) % 9;
+      if (k === 'ArrowDown') r = (r + 1) % 9;
+      if (k === 'ArrowLeft') c = (c + 8) % 9;
+      if (k === 'ArrowRight') c = (c + 1) % 9;
+      S.selected = r * 9 + c; render();
+    }
+  });
+
+  window.addEventListener('beforeunload', flushAuto);
+  window.addEventListener('pagehide', flushAuto);
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { if (S.running) { S.paused = true; stopTimer(); renderStats(); } flushAuto(); }
+  });
+
+  /* SECTION: boot */
+  function boot() {
+    var pref = Store.loadPref();
+    var wantDark = pref.theme ? pref.theme === 'dark'
+      : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.dataset.theme = wantDark ? 'dark' : 'light';
+    S.noteMode = false;
+
+    buildBoard(); buildKeypad();
+
+    var auto = Store.loadAuto();
+    if (auto && auto.status !== 'won') {
+      applySnapshot(auto);
+      render();
+      $('resumeBanner').hidden = false;
+      var left = 0;
+      for (var i = 0; i < 81; i++) if (!S.board[i]) left++;
+      $('resumeText').textContent = '发现未完成对局：' + auto.difficultyName + '，剩 ' + left + ' 格（用时 ' + fmt(auto.elapsedMs || 0) + '）';
+      $('resumeYes').onclick = function () {
+        $('resumeBanner').hidden = true;
+        if (!S.finished) startTimer();
+        toast('已继续上次对局');
+      };
+      $('resumeNo').onclick = function () {
+        $('resumeBanner').hidden = true;
+        Store.clearAuto();
+        newLevel(S.difficulty);
+      };
+    } else {
+      /* 无进度或上局已通关：按原难度开新局 */
+      newLevel(auto && auto.difficulty ? auto.difficulty : 'medium');
+    }
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+
+</script>
+
+<script>
+/* ============================================================================
+   视口单位兼容修正（v1.1.79，Android WebView）
+   ----------------------------------------------------------------------------
+   部分 WebView 内核把"布局视口"高度记为 0：CSS 的 `100vh` 恒等于 0，
+   而 `window.innerHeight` 正常。本页受影响的是：
+   - `body { min-height: 100vh }` → 0（页面高度撑不起来，背景断层）；
+   - `.sheet { max-height: 82vh }` → 0 → **「存档管理」弹层塌成一条**，
+     里面的存档列表与删除按钮都看不到（用户实测反馈的就是这个）。
+   修法：特性探测 + 用 innerHeight 覆盖这两处；正常浏览器里探测通过，不生效。
+   ========================================================================== */
+(function () {
+  window.__cimVhFix = true;
+  var probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:100vh';
+  document.body.appendChild(probe);
+  var broken = probe.getBoundingClientRect().height < 10;
+  document.body.removeChild(probe);
+  if (!broken) return;
+
+  function apply() {
+    var vh = window.innerHeight;
+    if (vh < 10) return;
+    document.body.style.minHeight = vh + 'px';
+    var style = document.getElementById('cim-vh-style');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'cim-vh-style';
+      style.textContent = '.sheet { max-height: 82% !important; }';
+      document.head.appendChild(style);
+    }
+  }
+  apply();
+  window.addEventListener('resize', apply);
+})();
+</script>
+</body>
+</html>

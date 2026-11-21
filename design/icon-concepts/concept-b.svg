@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bgB" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#262B33"/>
+      <stop offset="1" stop-color="#0E1014"/>
+    </linearGradient>
+  </defs>
+  <!-- 深色圆角方底：延续现有图标的黑色基因 -->
+  <rect x="0" y="0" width="1024" height="1024" rx="228" fill="url(#bgB)"/>
+  <!-- 四宫格：延续现有米白配色 -->
+  <!-- 左上格：已完成（实心 + 深色对勾） -->
+  <rect x="278" y="278" width="196" height="196" rx="56" fill="#FFF2E5"/>
+  <path d="M324 378 L364 418 L436 342" fill="none" stroke="#1A1D24"
+        stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 右上格：实心 -->
+  <rect x="550" y="278" width="196" height="196" rx="56" fill="#FFF2E5"/>
+  <!-- 左下格：实心 -->
+  <rect x="278" y="550" width="196" height="196" rx="56" fill="#FFF2E5"/>
+  <!-- 右下格：空心（待完成） -->
+  <rect x="550" y="550" width="196" height="196" rx="56" fill="none"
+        stroke="#FFF2E5" stroke-width="22"/>
+</svg>

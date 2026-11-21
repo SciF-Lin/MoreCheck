@@ -707,7 +707,12 @@ class AppIconRepository(
          */
         val BUILT_IN_ICON_IDS = listOf(
             "default", "blue", "purple", "orange",
-            "check", "star", "flame", "leaf", "tree"
+            "check", "star", "flame", "leaf", "tree",
+            // v1.1.71 新增两套图标设计稿：
+            // - checklist：曜石黑底 + 米白四宫格（其中一格打勾），延续原默认图标的视觉基因；
+            // - calendar ：青绿底 + 白色日历镂空对勾，“今日已打卡”语义最直白。
+            // 两套均是「渐变背景 drawable + 透明前景 PNG」，各自一套自适应图标 XML。
+            "checklist", "calendar"
         )
     }
 }

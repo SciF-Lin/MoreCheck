@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<!-- MoreCheck 云同步（v3）：把云端拉下来的游戏存档灌进 localStorage。
+     必须在本页自身脚本读取 localStorage 之前执行，因此放在 <head> 最前面。
+     没有待灌入快照时整段静默跳过。 -->
+<script>
+(function(){try{var b=window.__CIM_GAME__;if(!b)return;var p=b.pendingState();if(p){var d=JSON.parse(p);for(var k in d){try{localStorage.setItem(k,d[k]);}catch(e){}}b.markApplied();}}catch(e){}})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#E63946">
+<title>番茄时钟</title>
+<style>
+  :root{
+    --focus:#E63946;
+    --short:#2A9D8F;
+    --long:#457B9D;
+    --bg:#FFF8F3;
+    --card:#FFFFFF;
+    --text:#1D2D44;
+    --muted:#6B7280;
+    --shadow:0 8px 30px rgba(230,57,70,.12);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  /* ── WebView 适配（仅版式，业务逻辑零改动）──────────────────────────────
+     1) html 只给基线高度，body 改用 min-height:100dvh：
+        原来的 html,body{height:100%} 会让 body 恒等于视口高，内容一旦高于视口，
+        flex 的 align-items:center 会把溢出**对半分到上下**，上半部分 top 变负
+        且滚不到（HANDOVER 5.15 第 3 条，贪吃蛇踩过）。
+        改成 min-height + height:auto 后，容器高度 = max(内容, 视口)，
+        内容永远不会"溢出父容器"，居中也就永远安全。
+     2) 100dvh 兜住移动 WebView 里 100vh 与地址栏/系统栏的误差（旧内核回落到 100vh）。
+     3) -webkit-text-size-adjust:100%：抑制 WebView 的"字号自动放大"，
+        否则系统字体缩放档位一变，整套 px 版式会被系统放大后挤破。
+     4) env(safe-area-inset-*)：需要 viewport-fit=cover 才非零。本页 WebView 一直铺到
+        手势条下方（原生侧只让出了顶部），底部不做内边距会让提示文案压在手势条上。 */
+  html{
+    height:100%;
+    -webkit-text-size-adjust:100%;
+    text-size-adjust:100%;
+  }
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    /* 2026-10-22 需求 4：居中改由 .stage 承担（见下）。body 只铺底色，
+       不再自己参与 flex 居中——之前正是"body 高度算得比视口小"时，
+       flex 居中退化成"贴顶"，卡片看起来贴在标题栏下面。 */
+    margin:0;
+    overflow:hidden;
+    -webkit-text-size-adjust:100%;
+    text-size-adjust:100%;
+  }
+  /* 居中层：**position:fixed + inset:0** 保证它的高度等于可视视口，
+     与 body 的内容高度彻底解耦，因此无论卡片多高、WebView 报的
+     100vh/100dvh 准不准，卡片都稳定落在屏幕正中。
+     内容比视口高时（横屏 / 分屏 / 超大字号）这一层自己滚，卡片不会被裁掉。 */
+  .stage{
+    position:fixed;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:16px;
+    padding-top:calc(16px + env(safe-area-inset-top));
+    padding-right:calc(16px + env(safe-area-inset-right));
+    padding-bottom:calc(16px + env(safe-area-inset-bottom));
+    padding-left:calc(16px + env(safe-area-inset-left));
+    overflow-x:hidden;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    /* flex 子项在"内容比容器高"时会被压缩，这里显式禁止，交给滚动。 */
+    box-sizing:border-box;
+  }
+  .stage > .app{ flex:0 0 auto; }
+  .app{
+    width:100%;
+    max-width:420px;
+    background:var(--card);
+    border-radius:28px;
+    box-shadow:var(--shadow);
+    padding:28px 24px 24px;
+    position:relative;
+    overflow:hidden;
+  }
+  .topbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:8px;
+  }
+  .brand{font-weight:700;font-size:18px;display:flex;align-items:center;gap:8px}
+  .brand .dot{width:12px;height:12px;border-radius:50%;background:var(--focus)}
+  .today{font-size:13px;color:var(--muted)}
+  .modes{
+    display:flex;
+    gap:6px;
+    background:#F1F5F9;
+    border-radius:14px;
+    padding:5px;
+    margin:14px 0 22px;
+  }
+  .mode-btn{
+    flex:1;
+    border:none;
+    background:transparent;
+    padding:9px 4px;
+    border-radius:10px;
+    font-size:13px;
+    color:var(--muted);
+    cursor:pointer;
+    transition:.25s;
+    font-weight:600;
+  }
+  .mode-btn.active{background:var(--card);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.06)}
+  .timer-wrap{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    margin:6px 0 18px;
+  }
+  /* 圆环尺寸自适应：宽度取「248px / 剩余宽度 / 46vh」三者最小。
+     46vh 那一项是为横屏与小屏准备的（横屏高度只有 300~400px，固定 248px 会把
+     控件挤出视口）；svg 是 viewBox 缩放的，所以环本身改成等比缩放不会失真。
+     JS 只读写 #progress 的 stroke-dasharray/dashoffset（基于 viewBox 的 2πr），
+     与这里的 CSS 尺寸无关，因此缩放不影响进度环的正确性。 */
+  .ring{
+    position:relative;
+    width:min(248px, 46vh, 100%);
+    aspect-ratio:1/1;
+    display:flex;align-items:center;justify-content:center;
+  }
+  /* 老内核兜底：不支持 aspect-ratio 时退回固定高度（WebView 是系统组件，
+     极老机型可能仍是 Chromium < 88）。此时圆环不严格等比，但不会塌成 0 高。 */
+  @supports not (aspect-ratio: 1/1){
+    .ring{height:min(248px, 46vh)}
+  }
+  .ring svg{position:absolute;inset:0;transform:rotate(-90deg);width:100%;height:100%}
+  .ring .bg-circle{fill:none;stroke:#F1F5F9;stroke-width:12}
+  .ring .fg-circle{fill:none;stroke-width:12;stroke-linecap:round;transition:stroke-dashoffset .5s linear,stroke .4s}
+  .time{
+    font-size:clamp(36px, min(15vw, 6.5vh), 60px);
+    font-weight:700;
+    letter-spacing:2px;
+    font-variant-numeric:tabular-nums;
+    z-index:1;
+  }
+  .phase-label{
+    font-size:14px;
+    color:var(--muted);
+    margin-top:6px;
+    letter-spacing:1px;
+  }
+  .controls{
+    display:flex;
+    gap:12px;
+    justify-content:center;
+    margin:8px 0 20px;
+  }
+  .btn{
+    border:none;
+    border-radius:50%;
+    width:56px;height:56px;
+    font-size:18px;
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:transform .15s;
+    flex:0 0 auto;
+  }
+  .btn:active{transform:scale(.92)}
+  .btn.secondary{background:#F1F5F9;color:var(--text)}
+  .btn.primary{
+    width:76px;height:76px;font-size:16px;font-weight:700;color:#fff;
+  }
+  .stats{
+    display:flex;
+    justify-content:space-around;
+    padding:14px;
+    background:#FAFAFA;
+    border-radius:16px;
+    margin-top:6px;
+  }
+  .stat{text-align:center}
+  .stat .num{font-size:22px;font-weight:700}
+  .stat .lbl{font-size:12px;color:var(--muted);margin-top:2px}
+  .dots{display:flex;gap:6px;justify-content:center;margin-top:14px}
+  .dots span{width:8px;height:8px;border-radius:50%;background:#E5E7EB}
+  .dots span.done{background:var(--focus)}
+  .hint{text-align:center;font-size:12px;color:var(--muted);margin-top:12px;min-height:16px}
+  /* 矮屏（横屏 / 分屏）再收一档留白，让统计与提示行尽量留在首屏内。 */
+  @media (max-height:560px){
+    .app{padding:18px 20px 16px;border-radius:22px}
+    .modes{margin:10px 0 14px}
+    .timer-wrap{margin:2px 0 10px}
+    .phase-label{margin-top:2px}
+    .controls{margin:6px 0 12px}
+    .stats{padding:10px}
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+<div class="app">
+  <!-- SECTION: topbar -->
+  <div class="topbar">
+    <div class="brand"><span class="dot"></span>番茄时钟</div>
+    <div class="today" id="today"></div>
+  </div>
+
+  <!-- SECTION: modes -->
+  <div class="modes">
+    <button class="mode-btn active" data-mode="focus">专注</button>
+    <button class="mode-btn" data-mode="short">短休息</button>
+    <button class="mode-btn" data-mode="long">长休息</button>
+  </div>
+
+  <!-- SECTION: timer -->
+  <div class="timer-wrap">
+    <div class="ring">
+      <svg viewBox="0 0 220 220">
+        <circle class="bg-circle" cx="110" cy="110" r="98"/>
+        <circle class="fg-circle" id="progress" cx="110" cy="110" r="98"/>
+      </svg>
+      <div style="text-align:center">
+        <div class="time" id="time">25:00</div>
+        <div class="phase-label" id="phase-label">专注时间</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION: controls -->
+  <div class="controls">
+    <button class="btn secondary" id="reset" aria-label="重置" title="重置">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+    </button>
+    <button class="btn primary" id="toggle" data-primary-action>开始</button>
+    <button class="btn secondary" id="skip" aria-label="跳过" title="跳过当前阶段">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4l10 8-10 8z"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+    </button>
+  </div>
+
+  <!-- SECTION: stats -->
+  <div class="stats">
+    <div class="stat"><div class="num" id="count">0</div><div class="lbl">今日番茄</div></div>
+    <div class="stat"><div class="num" id="round-num">1</div><div class="lbl">当前轮次</div></div>
+    <div class="stat"><div class="num" id="total">0</div><div class="lbl">累计专注(分)</div></div>
+  </div>
+
+  <div class="dots" id="dots"></div>
+  <div class="hint" id="hint">点击开始，进入专注</div>
+</div>
+</div>
+
+<script>
+/* SECTION: config */
+const DURATIONS={focus:25*60,short:5*60,long:15*60};
+const COLORS={focus:'#E63946',short:'#2A9D8F',long:'#457B9D'};
+const LABELS={focus:'专注时间',short:'短休息',long:'长休息'};
+
+/* SECTION: state */
+let mode='focus';
+let remaining=DURATIONS.focus;
+let total=DURATIONS.focus;
+let running=false;
+let timer=null;
+let completedToday=0;
+let focusMinutes=0;
+let roundInCycle=1; // 1-4
+
+/* SECTION: persist */
+const KEY='pomodoro-state-v1';
+function loadState(){
+  try{
+    const s=JSON.parse(localStorage.getItem(KEY)||'{}');
+    const todayKey=new Date().toDateString();
+    if(s.date===todayKey){
+      completedToday=s.completedToday||0;
+      focusMinutes=s.focusMinutes||0;
+      roundInCycle=s.roundInCycle||1;
+    }
+  }catch(e){}
+}
+function saveState(){
+  localStorage.setItem(KEY,JSON.stringify({
+    date:new Date().toDateString(),
+    completedToday,focusMinutes,roundInCycle
+  }));
+}
+
+/* SECTION: dom */
+const $=id=>document.getElementById(id);
+const timeEl=$('time');
+const progress=$('progress');
+const toggle=$('toggle');
+const reset=$('reset');
+const skip=$('skip');
+const phaseLabel=$('phase-label');
+const countEl=$('count');
+const roundEl=$('round-num');
+const totalEl=$('total');
+const dotsEl=$('dots');
+const hint=$('hint');
+const todayEl=$('today');
+const C=2*Math.PI*98;
+progress.setAttribute('stroke-dasharray',C);
+
+function fmt(s){
+  const m=Math.floor(s/60).toString().padStart(2,'0');
+  const sec=(s%60).toString().padStart(2,'0');
+  return m+':'+sec;
+}
+function render(){
+  timeEl.textContent=fmt(remaining);
+  phaseLabel.textContent=LABELS[mode];
+  const color=COLORS[mode];
+  progress.style.stroke=color;
+  document.querySelector('.brand .dot').style.background=color;
+  document.documentElement.style.setProperty('--focus',color);
+  const pct=total>0?remaining/total:0;
+  progress.setAttribute('stroke-dashoffset',C*(1-pct));
+  countEl.textContent=completedToday;
+  roundEl.textContent=roundInCycle;
+  totalEl.textContent=focusMinutes;
+  toggle.textContent=running?'暂停':(remaining<total?'继续':'开始');
+  toggle.style.background=color;
+  // dots：当前轮次中已完成专注数
+  dotsEl.innerHTML='';
+  const doneInCycle=mode==='focus'?(roundInCycle-1):roundInCycle;
+  for(let i=1;i<=4;i++){
+    const d=document.createElement('span');
+    if(i<=doneInCycle) d.classList.add('done');
+    dotsEl.appendChild(d);
+  }
+  // date
+  const now=new Date();
+  todayEl.textContent=(now.getMonth()+1)+'/'+now.getDate();
+}
+
+/* SECTION: timer */
+function tick(){
+  remaining--;
+  if(remaining<=0){
+    completePhase();
+    return;
+  }
+  render();
+}
+function start(){
+  if(running) return;
+  running=true;
+  timer=setInterval(tick,1000);
+  hint.textContent='专注中…保持节奏';
+  render();
+}
+function pause(){
+  running=false;
+  clearInterval(timer);
+  hint.textContent='已暂停，点击继续';
+  render();
+}
+function completePhase(){
+  running=false;
+  clearInterval(timer);
+  if(mode==='focus'){
+    completedToday++;
+    focusMinutes+=DURATIONS.focus/60;
+    // 振动反馈
+    if(navigator.vibrate) navigator.vibrate([200,100,200]);
+    if(roundInCycle>=4){
+      mode='long';
+      roundInCycle=1;
+      hint.textContent='完成4个专注，进入长休息';
+    }else{
+      mode='short';
+      roundInCycle++;
+      hint.textContent='专注完成，休息一下';
+    }
+  }else{
+    mode='focus';
+    hint.textContent='休息结束，开始下一轮专注';
+  }
+  remaining=DURATIONS[mode];
+  total=DURATIONS[mode];
+  saveState();
+  render();
+  // 完成后自动开始下一阶段（可选，这里静默准备）
+}
+function resetTimer(){
+  running=false;
+  clearInterval(timer);
+  remaining=DURATIONS[mode];
+  total=DURATIONS[mode];
+  hint.textContent='已重置';
+  render();
+}
+function skipPhase(){
+  remaining=0;
+  completePhase();
+}
+
+/* SECTION: events */
+toggle.addEventListener('click',()=> running?pause():start());
+reset.addEventListener('click',resetTimer);
+skip.addEventListener('click',skipPhase);
+document.querySelectorAll('.mode-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    if(running) pause();
+    mode=btn.dataset.mode;
+    remaining=DURATIONS[mode];
+    total=DURATIONS[mode];
+    hint.textContent='已切换至 '+LABELS[mode];
+    document.querySelectorAll('.mode-btn').forEach(b=>b.classList.toggle('active',b===btn));
+    render();
+  });
+});
+
+/* SECTION: init */
+loadState();
+render();
+</script>
+</body>
+</html>

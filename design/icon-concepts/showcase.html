@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MoreCheck · App 图标设计方案</title>
+<style>
+  :root{
+    --ink:#1c2430; --sub:#6b7684; --line:#e5e9ef; --card:#ffffff; --bg:#f4f6f9;
+    --brand:#1E88E5;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Segoe UI","Microsoft YaHei",-apple-system,sans-serif;background:var(--bg);color:var(--ink);padding:40px 24px 72px;line-height:1.6}
+  .wrap{max-width:1180px;margin:0 auto}
+  header{text-align:center;margin-bottom:44px}
+  header h1{font-size:30px;letter-spacing:.5px}
+  header p{color:var(--sub);margin-top:8px;font-size:15px}
+  .tag{display:inline-block;background:#eaf3fd;color:var(--brand);font-size:13px;padding:4px 14px;border-radius:99px;margin-bottom:14px;font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:0 6px 24px rgba(28,36,48,.05)}
+  .stage{height:300px;display:flex;align-items:center;justify-content:center;position:relative}
+  .stage.light{background:linear-gradient(135deg,#eef2f7,#dfe6ef)}
+  .stage.dark{background:linear-gradient(135deg,#2b3442,#161c26)}
+  .stage img{width:180px;height:180px;filter:drop-shadow(0 12px 20px rgba(0,0,0,.22))}
+  .badge{position:absolute;top:16px;left:16px;font-size:12px;font-weight:700;padding:5px 12px;border-radius:99px;background:rgba(255,255,255,.85);color:#333}
+  .badge.rec{background:var(--brand);color:#fff}
+  .info{padding:20px 22px 24px}
+  .info h2{font-size:19px;display:flex;align-items:center;gap:8px}
+  .info h2 .dot{width:9px;height:9px;border-radius:50%}
+  .info .desc{color:var(--sub);font-size:14px;margin-top:8px;min-height:64px}
+  .swatches{display:flex;gap:7px;margin-top:14px}
+  .swatches i{width:22px;height:22px;border-radius:7px;display:block;border:1px solid rgba(0,0,0,.08)}
+  .sizes{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);display:flex;align-items:center;gap:14px}
+  .sizes .s{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .sizes img{display:block;border-radius:22%}
+  .sizes .lbl{font-size:11px;color:var(--sub)}
+  .howto{margin-top:40px;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:24px 28px}
+  .howto h3{font-size:16px;margin-bottom:10px}
+  .howto p,.howto li{color:var(--sub);font-size:14px}
+  .howto ol{margin-left:20px;margin-top:6px}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="tag">MoreCheck · 图标设计稿</div>
+    <h1>三款 App 图标方案</h1>
+    <p>主题：打卡 · 完成 · 坚持　|　矢量绘制，1024×1024 透明底 PNG</p>
+  </header>
+
+  <div class="grid">
+    <!-- A -->
+    <div class="card">
+      <div class="stage light">
+        <span class="badge rec">★ 主推</span>
+        <img src="concept-a.png" alt="方案A">
+      </div>
+      <div class="info">
+        <h2><span class="dot" style="background:#1E88E5"></span>A · 品牌蓝 · 完成打卡</h2>
+        <div class="desc">蓝到青的品牌渐变配进度环，缺口与端点象征每日循环的坚持，中心对勾代表打卡完成。现代、耐看，最契合产品气质。</div>
+        <div class="swatches"><i style="background:#2E9BFF"></i><i style="background:#1E88E5"></i><i style="background:#00A6A6"></i><i style="background:#FFFFFF"></i></div>
+        <div class="sizes">
+          <div class="s"><img src="concept-a.png" width="72" height="72" alt=""><span class="lbl">72 px</span></div>
+          <div class="s"><img src="concept-a.png" width="48" height="48" alt=""><span class="lbl">48 px</span></div>
+          <div class="s"><img src="concept-a.png" width="28" height="28" alt=""><span class="lbl">28 px</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- B -->
+    <div class="card">
+      <div class="stage dark">
+        <span class="badge">延续基因</span>
+        <img src="concept-b.png" alt="方案B">
+      </div>
+      <div class="info">
+        <h2><span class="dot" style="background:#0E1014"></span>B · 曜石黑 · 清单打卡</h2>
+        <div class="desc">保留现有图标「黑底 + 米白金四宫格」的视觉基因，把其中一格改成打勾状态——像一份正在完成的打卡清单，品牌延续性最强。</div>
+        <div class="swatches"><i style="background:#262B33"></i><i style="background:#0E1014"></i><i style="background:#FFF2E5"></i></div>
+        <div class="sizes">
+          <div class="s"><img src="concept-b.png" width="72" height="72" alt=""><span class="lbl">72 px</span></div>
+          <div class="s"><img src="concept-b.png" width="48" height="48" alt=""><span class="lbl">48 px</span></div>
+          <div class="s"><img src="concept-b.png" width="28" height="28" alt=""><span class="lbl">28 px</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- C -->
+    <div class="card">
+      <div class="stage light">
+        <span class="badge">语义直白</span>
+        <img src="concept-c.png" alt="方案C">
+      </div>
+      <div class="info">
+        <h2><span class="dot" style="background:#12B8A6"></span>C · 青绿 · 日历打卡</h2>
+        <div class="desc">白色日历上镂空出一个对勾，一眼看懂「今日已打卡」。青绿渐变呼应现有主题色，语义最直白、亲和力最强。</div>
+        <div class="swatches"><i style="background:#12B8A6"></i><i style="background:#2E9E5B"></i><i style="background:#FFFFFF"></i></div>
+        <div class="sizes">
+          <div class="s"><img src="concept-c.png" width="72" height="72" alt=""><span class="lbl">72 px</span></div>
+          <div class="s"><img src="concept-c.png" width="48" height="48" alt=""><span class="lbl">48 px</span></div>
+          <div class="s"><img src="concept-c.png" width="28" height="28" alt=""><span class="lbl">28 px</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="howto">
+    <h3>下一步</h3>
+    <p>告诉我你偏好哪一款（或想把几款的元素组合），我可以继续：</p>
+    <ol>
+      <li>按 Android 自适应图标规范拆成前景 / 背景层，生成各 mipmap 密度的完整资源；</li>
+      <li>替换进工程并重新打包 APK，或只把资源文件放到指定目录供你自行替换。</li>
+    </ol>
+  </div>
+</div>
+</body>
+</html>

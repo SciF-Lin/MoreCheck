@@ -2,7 +2,7 @@
 
 ## 目录
 
-- `sources/v1.1.2/MoreCheck/`、`sources/v1.1.50/MoreCheck/`、`sources/v1.1.70/MoreCheck/`：三个版本的 Android Gradle 工程。
+- `sources/v1.1.2/MoreCheck/`、`sources/v1.1.50/MoreCheck/`、`sources/v1.1.70/MoreCheck/`、`sources/v1.1.90/MoreCheck/`：各版本的 Android Gradle 工程。
 - `dist/`：已签名的发布包。
 - `keystore.properties.example`：签名配置模板，需复制到各版本工程根目录并填入本机信息。
 
@@ -46,7 +46,7 @@ gradle -p sources/v1.1.70/MoreCheck assembleRelease --console=plain
 
 产物位于 `sources/v1.1.70/MoreCheck/app/build/outputs/apk/release/app-release.apk`。
 
-如需构建其他版本，把上面的工程目录换成 `sources/v1.1.2/MoreCheck` 或 `sources/v1.1.50/MoreCheck`。
+如需构建其他版本，把上面的工程目录换成 `sources/v1.1.2/MoreCheck`、`sources/v1.1.50/MoreCheck` 或 `sources/v1.1.70/MoreCheck`。
 
 ## 说明
 

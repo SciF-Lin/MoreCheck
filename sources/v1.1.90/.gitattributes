@@ -1,0 +1,32 @@
+# Normalize text files to LF in the repository; keep CRLF out of the object
+# store while not fighting the local working tree (Windows + Android project).
+* text=auto eol=lf
+
+# Gradle wrapper scripts must keep CRLF on Windows or the .bat breaks.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell scripts must keep LF or they break on macOS/Linux/CI.
+gradlew text eol=lf
+*.sh  text eol=lf
+
+# Binary assets: never touch line endings or diff them as text.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.webp binary
+*.ico  binary
+*.gif  binary
+*.jar  binary
+*.jks  binary
+*.apk  binary
+*.aab  binary
+*.zip  binary
+*.so   binary
+*.dex  binary
+*.bin  binary
+*.pb   binary
+
+# Generated / vendored files that should not clutter diffs.
+*.jar linguist-vendored
+gradle/wrapper/gradle-wrapper.jar linguist-generated=true

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="432" height="432">
+  <defs>
+    <mask id="calMask">
+      <rect x="29" y="35" width="50" height="43" rx="7" fill="#FFFFFF"/>
+      <path d="M38,56 L45,63 L66,42" fill="none" stroke="#000000"
+            stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <!-- 日历挂环 -->
+  <rect x="41" y="27" width="4.5" height="12" rx="2.25" fill="#FFFFFF"/>
+  <rect x="62.5" y="27" width="4.5" height="12" rx="2.25" fill="#FFFFFF"/>
+  <!-- 日历主体 + 镂空对勾 -->
+  <rect x="29" y="35" width="50" height="43" rx="7" fill="#FFFFFF" mask="url(#calMask)"/>
+</svg>

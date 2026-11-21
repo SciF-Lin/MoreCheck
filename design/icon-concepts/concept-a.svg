@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bgA" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2E9BFF"/>
+      <stop offset="0.5" stop-color="#1E88E5"/>
+      <stop offset="1" stop-color="#00A6A6"/>
+    </linearGradient>
+    <linearGradient id="ringA" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EAF6FF"/>
+    </linearGradient>
+  </defs>
+  <!-- 圆角方底 -->
+  <rect x="0" y="0" width="1024" height="1024" rx="228" fill="url(#bgA)"/>
+  <!-- 进度环：近乎闭合，右上留一处缺口，象征每日循环的坚持 -->
+  <circle cx="512" cy="512" r="252" fill="none" stroke="url(#ringA)"
+          stroke-width="70" stroke-linecap="round"
+          stroke-dasharray="1450 1584" transform="rotate(-118 512 512)"/>
+  <!-- 缺口处的一颗小圆点，像进度端点 -->
+  <circle cx="756" cy="270" r="20" fill="#BFE9FF"/>
+  <!-- 中心对勾：打卡完成 -->
+  <path d="M400 520 L482 602 L636 448" fill="none" stroke="#FFFFFF"
+        stroke-width="86" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
