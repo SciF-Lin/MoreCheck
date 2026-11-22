@@ -21,5 +21,10 @@ sources/*/HANDOVER.md
 sources/*/dist/
 sources/*/MoreCheck/README.md
 
+# 上游 CheckInMate 原样快照：私有项目的源码，含其 .git 与 checkinmate.jks。
+# 仅本机参考，绝不随公开仓库分发（要出新版请按 HANDOVER 7.1 导出干净目录）。
+/sources/v1.2.0/
+/sources/v1.4.0/
+
 .DS_Store
 Thumbs.db

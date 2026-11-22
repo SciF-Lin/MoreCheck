@@ -19,10 +19,10 @@ MoreCheck 是一款**本地优先的个人打卡与效率工具**。日常打卡
 
 | 版本 | 适用系统 | 安装包 | SHA-256 |
 | --- | --- | --- | --- |
-| 1.1.90（推荐） | Android 10+（API 29 起） | `dist/MoreCheck-1.1.90.apk` | `144261b91aac39293dec264fc4327615640412bf5644407804fcf2db4c15be21` |
-| 1.1.70 | Android 10+（API 29 起） | `dist/MoreCheck-1.1.70.apk` | `7291efcf482fa1e77aa7bd9347e8068c6e41a7d7b75023a14769778ebd5cab60` |
+| 1.1.90（推荐） | Android 10+（API 29 起） | `dist/MoreCheck-1.1.90.apk` | `a57beaa086ba58bdd173bed9916d778ff424c9001c8c986091a0442d2ed543a9` |
+| 1.1.70 | Android 10+（API 29 起） | `dist/MoreCheck-1.1.70.apk` | `3f89aadc36c59e6a0b857abec366d56f3497a02fbadce108d167345ebc2486e2` |
 | 1.1.50 | Android 10+（API 29 起） | `dist/MoreCheck-1.1.50.apk` | `8fcedac5f11a063a81eb17f6456c9929707a6f498eda22b66f561747c1116a08` |
-| 1.1.2 | Android 10+（API 29 起） | `dist/MoreCheck-1.1.2.apk` | `93050663ef5bb58e5c736c440e89ebcc24397a96c0d35bca065f3713a081503d` |
+| 1.1.2 | Android 10+（API 29 起） | `dist/MoreCheck-1.1.2.apk` | `5a6202d18077886aa54174230a0e908fc6af664b054fb7b1497aa2e0ece665c3` |
 
 四个版本使用相同的应用标识与签名，因此可以在它们之间直接覆盖升级。若设备上已安装其他来源的同名应用，请先卸载再安装。
 
@@ -70,3 +70,9 @@ sha256sum MoreCheck-1.1.70.apk
 ## 源码与构建
 
 源码位于 `sources/`，构建方法见 [`BUILD.md`](BUILD.md)。
+
+## 开发者文档
+
+- [`HANDOVER.md`](HANDOVER.md)：项目定位、与 CheckInMate 的关系、目录地图、架构、构建与发布流程（接手先读）
+- [`docs/待办与已知问题.md`](docs/待办与已知问题.md)：还没做完的事、已知 bug、避坑清单
+- [`docs/版本历史.md`](docs/版本历史.md)：历代版本、更新日志与上游沿革
