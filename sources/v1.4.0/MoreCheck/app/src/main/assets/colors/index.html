@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>色卡</title>
+<!--
+  「实验室 → 色卡」（2026-11-02）
+
+  ## 为什么是单文件 + 一个数据 js，走 file://
+  本页无 Worker、无 fetch、无外链资源、无 window.open，是纯静态页，
+  因此不需要 WebViewAssetLoader 的 https 映射（与 assets/sudoku2 同一口径）。
+  数据在 colors.js 里以 `window.COLORS` 暴露，脚本用同目录相对路径加载即可。
+
+  ## 主题
+  页面**不读** prefers-color-scheme：本应用深浅色由用户设置决定，可能与系统相反。
+  原生侧按 MaterialTheme 的明暗拼 `?theme=dark|light` 传进来，页面照它设 data-theme。
+  这一条与 `ui/lab/PomodoroScreen` 的处理方式一致（那边是固定浅色，本页两档都要）。
+-->
+<style>
+  :root{
+    --bg:#f6f5f2; --card:#ffffff; --text:#1b1b1b; --sub:#6b6b6b;
+    --line:rgba(0,0,0,.08); --chip:#ffffff; --chip-on:#1b1b1b; --chip-on-text:#ffffff;
+    --shadow:0 1px 2px rgba(0,0,0,.06);
+  }
+  html[data-theme="dark"]{
+    --bg:#121212; --card:#1e1e1e; --text:#ededed; --sub:#a0a0a0;
+    --line:rgba(255,255,255,.10); --chip:#1e1e1e; --chip-on:#ededed; --chip-on-text:#121212;
+    --shadow:none;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;
+    -webkit-text-size-adjust:100%;}
+  body{padding-bottom:calc(56px + env(safe-area-inset-bottom))}
+
+  header{position:sticky;top:0;z-index:5;background:var(--bg);
+    padding:12px 14px 8px;border-bottom:1px solid var(--line)}
+  /* 计数贴在搜索框右内侧：页面不再重复一遍"色卡"标题（原生标题栏已有） */
+  .cnt{position:absolute;right:14px;top:50%;transform:translateY(-50%);
+    font-size:12px;color:var(--sub);pointer-events:none}
+
+  .search{position:relative;margin-bottom:10px}
+  .search input{width:100%;height:38px;border-radius:19px;border:1px solid var(--line);
+    background:var(--card);color:var(--text);padding:0 62px 0 36px;font-size:14px;outline:none}
+  .search input::placeholder{color:var(--sub)}
+  .search svg{position:absolute;left:12px;top:10px;opacity:.45}
+
+  .segs{display:flex;gap:8px}
+  .segs button{flex:1;height:32px;border-radius:16px;border:1px solid var(--line);
+    background:var(--chip);color:var(--sub);font-size:13px;padding:0}
+  /* 刻意不加 transition：切换是"换一组数据看"，不是要过渡的动画（与下载页分栏同口径） */
+  .segs button.on{background:var(--chip-on);color:var(--chip-on-text);border-color:transparent}
+
+  main{padding:12px 14px 24px;display:grid;gap:8px;
+    grid-template-columns:repeat(auto-fill,minmax(96px,1fr))}
+  .cell{appearance:none;border:none;background:transparent;padding:0;text-align:left;
+    display:flex;flex-direction:column;align-items:stretch;gap:5px;content-visibility:auto;
+    contain-intrinsic-size:auto 104px}
+  .cell .sw{display:block;width:100%;height:72px;border-radius:10px;
+    border:1px solid var(--line);box-sizing:border-box}
+  .cell .nm{font-size:12px;line-height:1.15;color:var(--text);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cell .hx{font-size:10.5px;color:var(--sub);font-variant-numeric:tabular-nums}
+
+  .empty{grid-column:1/-1;text-align:center;color:var(--sub);font-size:13px;padding:48px 0}
+
+  /* 详情：底部弹层 */
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.35);opacity:0;pointer-events:none;
+    transition:opacity .16s ease}
+  .mask.on{opacity:1;pointer-events:auto}
+  .sheet{position:fixed;left:0;right:0;bottom:0;background:var(--card);
+    border-radius:18px 18px 0 0;transform:translateY(102%);
+    transition:transform .2s ease;z-index:10;
+    padding:14px 16px calc(56px + env(safe-area-inset-bottom))}
+  .sheet.on{transform:translateY(0)}
+  .sheet .hd{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .sheet .big{width:56px;height:56px;border-radius:12px;border:1px solid var(--line);flex:none}
+  .sheet .tt{min-width:0}
+  .sheet .tt .n1{font-size:17px;font-weight:600}
+  .sheet .tt .n2{font-size:12px;color:var(--sub);margin-top:2px}
+
+  .row{display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid var(--line)}
+  .row .k{width:46px;font-size:12px;color:var(--sub);flex:none}
+  .row .v{flex:1;font-size:14px;font-variant-numeric:tabular-nums;
+    word-break:break-all;line-height:1.3}
+  .row .cp{flex:none;height:28px;padding:0 12px;border-radius:14px;border:1px solid var(--line);
+    background:transparent;color:var(--text);font-size:12px}
+
+  #toast{position:fixed;left:50%;bottom:88px;transform:translate(-50%,8px);opacity:0;
+    background:rgba(20,20,20,.88);color:#fff;font-size:12.5px;padding:8px 14px;border-radius:16px;
+    pointer-events:none;transition:opacity .16s ease,transform .16s ease;z-index:20}
+  html[data-theme="dark"] #toast{background:rgba(240,240,240,.92);color:#111}
+  #toast.on{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<header>
+  <div class="search">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path>
+    </svg>
+    <input id="q" type="search" placeholder="搜色名 / 拼音 / HEX" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <span class="cnt" id="cnt"></span>
+  </div>
+  <div class="segs">
+    <button data-src="-1" class="on">全部</button>
+    <button data-src="0">中国色</button>
+    <button data-src="1">日本色</button>
+  </div>
+</header>
+
+<main id="grid"></main>
+
+<div class="mask" id="mask"></div>
+<div class="sheet" id="sheet">
+  <div class="hd">
+    <div class="big" id="dSw"></div>
+    <div class="tt">
+      <div class="n1" id="dName"></div>
+      <div class="n2" id="dPy"></div>
+    </div>
+  </div>
+  <div id="dRows"></div>
+</div>
+<div id="toast"></div>
+
+<script src="colors.js"></script>
+<script>
+(function () {
+  var ALL = window.COLORS || [];
+  var theme = new URLSearchParams(location.search).get('theme');
+  if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+
+  var grid = document.getElementById('grid');
+  var cnt = document.getElementById('cnt');
+  var q = document.getElementById('q');
+  var mask = document.getElementById('mask');
+  var sheet = document.getElementById('sheet');
+  var toast = document.getElementById('toast');
+  var src = -1;          // -1 全部 / 0 中国色 / 1 日本色
+  var current = null;
+
+  function hex2rgb(h) {
+    return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  }
+  /** RGB → CMYK 近似值（页面里不存 CMYK 时会用到；中国色那一批有原始 CMYK，优先用）。 */
+  function rgb2cmyk(rgb) {
+    var r = rgb[0] / 255, g = rgb[1] / 255, b = rgb[2] / 255;
+    var k = 1 - Math.max(r, g, b);
+    if (k >= 1) return [0, 0, 0, 100];
+    var c = (1 - r - k) / (1 - k), m = (1 - g - k) / (1 - k), y = (1 - b - k) / (1 - k);
+    return [Math.round(c * 100), Math.round(m * 100), Math.round(y * 100), Math.round(k * 100)];
+  }
+
+  function matches(it, kw) {
+    if (!kw) return true;
+    var k = kw.toLowerCase();
+    return it.n.toLowerCase().indexOf(k) >= 0
+        || (it.p || '').toLowerCase().indexOf(k) >= 0
+        || it.h.indexOf(k) >= 0;
+  }
+
+  function render() {
+    var kw = q.value.trim();
+    // 用 __i 记住在 ALL 里的下标：中国色与日本色里存在同色值的两条，
+    // 按 hex 反查会永远命中第一条（点"紅梅"弹出"乳白"）。
+    var list = ALL.filter(function (it, i) {
+      it.__i = i;
+      return (src < 0 || it.s === src) && matches(it, kw);
+    });
+    cnt.textContent = list.length + ' 色';
+    if (!list.length) {
+      grid.innerHTML = '<div class="empty">没有匹配的颜色</div>';
+      return;
+    }
+    var buf = [];
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i];
+      buf.push('<button class="cell" data-i="' + it.__i + '">' +
+        '<span class="sw" style="background:' + it.h + '"></span>' +
+        '<span class="nm">' + esc(it.n) + '</span>' +
+        '<span class="hx">' + it.h + '</span></button>');
+    }
+    grid.innerHTML = buf.join('');
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  function openDetail(it) {
+    current = it;
+    document.getElementById('dSw').style.background = it.h;
+    document.getElementById('dName').textContent = it.n;
+    document.getElementById('dPy').textContent = (it.p || '') + ' · ' + (it.s === 0 ? '中国色' : '日本色');
+    var rgb = it.rgb || hex2rgb(it.h);
+    var cmyk = it.cmyk || rgb2cmyk(rgb);
+    var rows = [
+      ['HEX', it.h],
+      ['RGB', rgb.join(', ')],
+      ['CMYK', cmyk.join(', ') + '%']
+    ];
+    document.getElementById('dRows').innerHTML = rows.map(function (r) {
+      return '<div class="row"><span class="k">' + r[0] + '</span>' +
+        '<span class="v">' + esc(r[1]) + '</span>' +
+        '<button class="cp" data-copy="' + esc(r[1]) + '">复制</button></div>';
+    }).join('');
+    mask.classList.add('on');
+    sheet.classList.add('on');
+  }
+
+  function closeDetail() {
+    mask.classList.remove('on');
+    sheet.classList.remove('on');
+    current = null;
+  }
+
+  var toastTimer = null;
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.classList.remove('on'); }, 1400);
+  }
+
+  /**
+   * 复制到剪贴板。
+   *
+   * 先试 `navigator.clipboard`（需要安全上下文，`file://` 在部分 WebView 版本上不算），
+   * 失败再退到 `execCommand('copy')` + 隐藏 textarea——这条在所有版本都可用。
+   * 两条都走不通也给出提示，而不是静默失败。
+   */
+  function copyText(text) {
+    function fallback() {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, ta.value.length);
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        showToast(ok ? '已复制' : '复制失败');
+      } catch (e) {
+        showToast('复制失败');
+      }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        showToast('已复制');
+      }, fallback);
+    } else {
+      fallback();
+    }
+  }
+
+  grid.addEventListener('click', function (e) {
+    var cell = e.target.closest('.cell');
+    if (!cell) return;
+    var it = ALL[parseInt(cell.dataset.i, 10)];
+    if (it) openDetail(it);
+  });
+
+  document.getElementById('dRows').addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-copy]');
+    if (btn) copyText(btn.dataset.copy);
+  });
+
+  mask.addEventListener('click', closeDetail);
+
+  // 搜索只是过滤，不做防抖：776 条的 filter + 重排在本机是 1~2ms 量级，
+  // 加防抖反而让输入回显变慢。
+  q.addEventListener('input', render);
+
+  Array.prototype.forEach.call(document.querySelectorAll('.segs button'), function (btn) {
+    btn.addEventListener('click', function () {
+      Array.prototype.forEach.call(document.querySelectorAll('.segs button'), function (b) {
+        b.classList.toggle('on', b === btn);
+      });
+      src = parseInt(btn.dataset.src, 10);
+      render();
+    });
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  网络明文（HTTP）策略（2026-11-05 新增，为「发现 → 音乐」）。
+
+  ## 为什么需要它
+
+  Android 9 起默认禁止明文 HTTP（`cleartextTrafficPermitted=false`）。
+  音乐播放链路是：`https://music.163.com/song/media/outer/url?id=X.mp3`
+  → **302 到 `http://m7xx.music.126.net/...`**（网易云 CDN 给的就是 http 直链）。
+  不放行就报 `CleartextNotPermittedException`，歌永远播不出来。
+
+  ## 为什么只放行这几个域名
+
+  - 全局 `usesCleartextTraffic="true"` 等于把整个应用的流量降级成可被中间人篡改，
+    不可以；
+  - 这里只对网易云音乐的两个域名放行：`music.126.net`（音频 CDN）与 `music.163.com`
+    （接口与跳转）；
+  - 其余域名一律仍按系统默认（禁止明文），`base-config` 明确写死 false，
+    避免将来有人加 `usesCleartextTraffic` 时被顺手放大。
+
+  ## 代价与后续
+
+  明文音频流理论上可被同网段劫持（换成别的音频）。这段流量本来就是公开的歌曲流、
+  不含任何用户数据，风险可接受；若将来网易云提供 https CDN，把这里的两条删掉即可。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- 音频 CDN：m701/m702/m80x 等子域都挂在 music.126.net 下 -->
+        <domain includeSubdomains="true">music.126.net</domain>
+        <!-- 接口与 302 跳转的入口 -->
+        <domain includeSubdomains="true">music.163.com</domain>
+        <!--
+          酷狗（2026-11-06 接入）：公开搜索与取链接口**只有 http**。
+          https 上这两个主机的证书与主机名对不上（mobilecdn/m.kugou.com 返回的是
+          其它域名的证书），OkHttp 会直接抛 SSLHandshakeException，所以只能用 http。
+          直链本身（sharefs.kugou.com）是 https，不受影响。
+        -->
+        <domain includeSubdomains="false">mobilecdn.kugou.com</domain>
+        <domain includeSubdomains="false">m.kugou.com</domain>
+    </domain-config>
+</network-security-config>

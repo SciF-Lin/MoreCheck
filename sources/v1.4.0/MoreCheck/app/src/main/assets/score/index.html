@@ -1,0 +1,1861 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#5b4bd6" />
+  <meta name="description" content="成绩收集统计：学生填写成绩，班长管理全班成绩与统计，数据云端保存，手机可用。" />
+  <title>成绩收集统计</title>
+  <style>
+    :root {
+      --primary: #5b4bd6;
+      --primary-2: #8a6ff0;
+      --bg: #f3f2f9;
+      --card: #ffffff;
+      --text: #1e1b2e;
+      --muted: #8b88a0;
+      --line: #e8e6f2;
+      --danger: #e5484d;
+      --ok: #2bb673;
+      --warn: #f0a020;
+      --shadow: 0 8px 30px rgba(30, 27, 46, 0.08);
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    /* ⚠️ 满高不要指望视口单位（2026-10-29 真机实测）：本 WebView 里 `xx vh` 恒为 0px，
+       连 `height:100%` 也算成 0。所以底部弹窗的高度上限改用**百分比**——它相对的是
+       `position: fixed; inset: 0` 的遮罩（高度确定，实测 695），这条路是通的；
+       `vh` 会把弹窗压成只剩 padding 高，内容全溢出到视口下方 → "弹窗过低、点不到"。 */
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 16px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      overscroll-behavior-y: none;
+    }
+    .hidden { display: none !important; }
+    button { font-family: inherit; }
+    input, select, textarea {
+      width: 100%; padding: 13px 14px; font-size: 16px; border: 1px solid var(--line);
+      border-radius: 12px; background: #fff; color: var(--text); outline: none; transition: border-color .15s;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--primary); }
+    textarea { min-height: 110px; resize: vertical; line-height: 1.6; }
+
+    /* 这里的 100vh 在当前 WebView 里也算成 0（见上面的说明），与本次弹窗问题无关，保持原样。 */
+    .app { max-width: 480px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+
+    /* ============ Login ============ */
+    .login-wrap { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 28px 22px 40px; }
+    .brand { text-align: center; margin-bottom: 26px; }
+    .brand .logo {
+      width: 66px; height: 66px; border-radius: 20px; margin: 0 auto 14px;
+      background: linear-gradient(135deg, var(--primary), var(--primary-2));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 30px; color: #fff; box-shadow: var(--shadow);
+    }
+    .brand h1 { font-size: 25px; margin: 0 0 6px; font-weight: 700; letter-spacing: .5px; }
+    .brand p { margin: 0; color: var(--muted); font-size: 14px; }
+
+    .btn {
+      border: 0; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 600; cursor: pointer;
+      background: var(--primary); color: #fff; transition: .15s; width: 100%;
+    }
+    .btn:active { transform: scale(.99); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn.wb { background: #1f7ae0; margin-bottom: 10px; }
+    .btn.wx { background: #1aad19; margin-bottom: 10px; }
+    .btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); margin-top: 10px; }
+    .btn.sm { padding: 10px 14px; font-size: 14px; width: auto; }
+    .btn.danger { background: var(--danger); }
+    .btn.soft { background: #eeebfd; color: var(--primary); }
+
+    .divider { display: flex; align-items: center; color: var(--muted); font-size: 12px; margin: 18px 0; }
+    .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+    .divider span { padding: 0 12px; }
+
+    .tabs { display: flex; background: var(--card); border-radius: 12px; padding: 4px; margin-bottom: 18px; box-shadow: var(--shadow); }
+    .tabs button {
+      flex: 1; border: 0; background: transparent; padding: 11px 0; font-size: 15px; font-weight: 600;
+      color: var(--muted); border-radius: 9px; cursor: pointer; transition: .2s;
+    }
+    .tabs button.active { background: var(--primary); color: #fff; }
+
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    .field .row { display: flex; gap: 10px; }
+    .field .row input { flex: 1; }
+    .btn.code { width: auto; white-space: nowrap; padding: 13px 16px; flex: 0 0 auto; }
+    .msg { font-size: 13px; margin-top: 12px; min-height: 18px; text-align: center; }
+    .msg.err { color: var(--danger); }
+    .msg.info { color: var(--ok); }
+    .hint { text-align: center; color: var(--muted); font-size: 12px; margin-top: 18px; }
+
+    /* ============ Role pick ============ */
+    .role-wrap { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 28px 22px 40px; }
+    .role-card {
+      background: var(--card); border-radius: var(--radius); padding: 18px; margin-bottom: 12px;
+      box-shadow: var(--shadow); cursor: pointer; border: 2px solid transparent; transition: .15s;
+    }
+    .role-card:active { transform: scale(.99); }
+    .role-card.sel { border-color: var(--primary); }
+    .role-card .rt { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; }
+    .role-card .rt .ico { font-size: 26px; }
+    .role-card .rd { font-size: 13px; color: var(--muted); margin-top: 8px; line-height: 1.6; }
+
+    /* ============ App shell ============ */
+    .topbar {
+      position: sticky; top: 0; z-index: 20; background: linear-gradient(135deg, var(--primary), var(--primary-2));
+      color: #fff; padding: 16px 18px 14px; border-radius: 0 0 22px 22px;
+    }
+    .topbar .title-row { display: flex; align-items: center; justify-content: space-between; }
+    .topbar h2 { margin: 0; font-size: 19px; font-weight: 700; }
+    .topbar .user { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .topbar .avatar {
+      width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,.22);
+      display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;
+    }
+    .topbar .logout {
+      background: rgba(255,255,255,.18); border: 0; color: #fff; font-size: 12px;
+      padding: 6px 11px; border-radius: 20px; cursor: pointer;
+    }
+    .topbar .sub { font-size: 13px; opacity: .92; margin: 4px 0 0; }
+
+    .page { flex: 1; padding: 16px 14px 40px; }
+    .card {
+      background: var(--card); border-radius: var(--radius); padding: 16px;
+      box-shadow: 0 2px 12px rgba(30,27,46,.05); margin-bottom: 12px;
+    }
+
+    .empty { text-align: center; padding: 50px 20px; color: var(--muted); }
+    .empty .ico { font-size: 44px; margin-bottom: 10px; }
+    .empty p { margin: 0 0 4px; font-size: 15px; }
+
+    .exam-item {
+      background: var(--card); border-radius: var(--radius); padding: 15px 16px; margin-bottom: 12px;
+      box-shadow: 0 2px 12px rgba(30,27,46,.05); cursor: pointer; animation: pop .18s ease;
+      border-left: 4px solid var(--primary);
+    }
+    @keyframes pop { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+    .exam-item:active { transform: scale(.995); }
+    .exam-item .row1 { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+    .exam-item .nm { font-size: 17px; font-weight: 700; }
+    .exam-item .badge {
+      font-size: 12px; color: var(--primary); background: #eeebfd; padding: 3px 9px; border-radius: 20px; flex: 0 0 auto;
+    }
+    .exam-item .meta { font-size: 13px; color: var(--muted); margin-top: 6px; }
+    .exam-item .mini-stats { display: flex; gap: 14px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+    .exam-item .mini-stats b { color: var(--text); font-size: 14px; }
+
+    .fab {
+      position: fixed; right: 18px; bottom: 24px; width: 56px; height: 56px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary), var(--primary-2)); color: #fff; border: 0;
+      font-size: 28px; line-height: 1; cursor: pointer; box-shadow: 0 8px 22px rgba(91,75,214,.38);
+      z-index: 30;
+    }
+    .fab:active { transform: scale(.94); }
+
+    /* ============ Sheet / modal ============ */
+    .mask {
+      position: fixed; inset: 0; background: rgba(20,18,38,.45); z-index: 40;
+      display: flex; align-items: flex-end; justify-content: center;
+    }
+    .sheet {
+      background: var(--card); width: 100%; max-width: 480px; border-radius: 20px 20px 0 0;
+      /* 88% 而不是 88vh：遮罩 .mask 是 fixed + inset:0（高度确定），百分比才有得算；
+         vh 在本 WebView 里恒为 0，会把整个弹窗压成 40px 高、内容溢出到屏幕外。 */
+      padding: 20px 18px calc(20px + env(safe-area-inset-bottom)); max-height: 88%; overflow-y: auto;
+      animation: up .22s ease;
+    }
+    @keyframes up { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+    .sheet h3 { margin: 0 0 4px; font-size: 19px; }
+    .sheet .sheet-sub { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+    .sheet-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .sheet-actions .btn { flex: 1; }
+    .seg { display: flex; background: #f3f2f9; border-radius: 11px; padding: 4px; margin-bottom: 16px; }
+    .seg button {
+      flex: 1; border: 0; background: transparent; padding: 9px 0; font-size: 14px; font-weight: 600;
+      color: var(--muted); border-radius: 8px; cursor: pointer;
+    }
+    .seg button.active { background: #fff; color: var(--primary); box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+
+    /* ============ Detail page ============ */
+    .detail-head {
+      background: linear-gradient(135deg, var(--primary), var(--primary-2)); color: #fff;
+      padding: 14px 18px 18px; border-radius: 0 0 22px 22px; margin-bottom: 14px;
+    }
+    .detail-head .back {
+      background: rgba(255,255,255,.18); border: 0; color: #fff; font-size: 13px;
+      padding: 6px 12px; border-radius: 20px; cursor: pointer; margin-bottom: 12px;
+    }
+    .detail-head h2 { margin: 0; font-size: 20px; font-weight: 700; }
+    .detail-head .meta { font-size: 13px; opacity: .92; margin-top: 5px; }
+
+    .kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
+    .kpi {
+      background: var(--card); border-radius: var(--radius); padding: 14px; box-shadow: 0 2px 12px rgba(30,27,46,.05);
+    }
+    .kpi .v { font-size: 24px; font-weight: 700; line-height: 1.15; letter-spacing: -.5px; }
+    .kpi .l { font-size: 12px; color: var(--muted); margin-top: 3px; }
+    .kpi .v.ok { color: var(--ok); }
+    .kpi .v.warn { color: var(--warn); }
+
+    .section-title { font-size: 15px; font-weight: 700; margin: 18px 2px 10px; display: flex; align-items: center; justify-content: space-between; }
+    .section-title .count { font-size: 12px; color: var(--muted); font-weight: 400; }
+
+    .hist { display: flex; align-items: flex-end; gap: 6px; height: 120px; padding: 0 2px; }
+    .hist .bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
+    .hist .bar {
+      width: 100%; background: linear-gradient(180deg, var(--primary-2), var(--primary));
+      border-radius: 6px 6px 3px 3px; min-height: 3px; transition: height .35s ease;
+    }
+    .hist .bar.zero { background: #e8e6f2; }
+    .hist .b-num { font-size: 11px; color: var(--muted); }
+    .hist .b-label { font-size: 10px; color: var(--muted); text-align: center; line-height: 1.2; height: 26px; }
+
+    .score-row {
+      display: flex; align-items: center; gap: 10px; background: var(--card);
+      border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; box-shadow: 0 2px 8px rgba(30,27,46,.04);
+    }
+    .score-row .rank {
+      width: 26px; height: 26px; border-radius: 50%; background: #f0eefc; color: var(--primary);
+      display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex: 0 0 auto;
+    }
+    .score-row .rank.top { background: linear-gradient(135deg, #ffb340, #ff8a3d); color: #fff; }
+    .score-row .info { flex: 1; min-width: 0; }
+    .score-row .nm { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .score-row .no { font-size: 12px; color: var(--muted); }
+    .score-row .sc { font-size: 19px; font-weight: 700; flex: 0 0 auto; }
+    .score-row .sc.pass { color: var(--ok); }
+    .score-row .sc.fail { color: var(--danger); }
+    .score-row .sc-input { width: 92px; flex: 0 0 auto; padding: 9px 10px; font-size: 16px; font-weight: 700; text-align: center; }
+    .score-row .del {
+      flex: 0 0 auto; background: transparent; border: 0; color: var(--muted); font-size: 18px;
+      cursor: pointer; padding: 4px 6px; line-height: 1;
+    }
+    .score-row .tag { font-size: 11px; color: var(--muted); background: #f3f2f9; padding: 2px 7px; border-radius: 10px; margin-left: 6px; }
+
+    .import-help { font-size: 12px; color: var(--muted); line-height: 1.7; margin: 0 0 10px; }
+    .import-help code { background: #f0eefc; color: var(--primary); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+    .code-box {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      background: #f6f5fd; border: 1px dashed #cfc9f2; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
+    }
+    .code-box .cd { font-size: 26px; font-weight: 800; letter-spacing: 4px; color: var(--primary); }
+    .code-box .cl { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .chip-row { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 8px; margin-bottom: 4px; }
+    .chip {
+      flex: 0 0 auto; background: var(--card); border: 1px solid var(--line); border-radius: 20px;
+      padding: 7px 14px; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer;
+    }
+    .chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+    .link-btn { background: none; border: 0; color: var(--primary); font-size: 13px; font-weight: 600; cursor: pointer; padding: 6px 0; }
+
+    .toast {
+      position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%) translateY(20px);
+      background: rgba(30,27,46,.92); color: #fff; padding: 11px 20px; border-radius: 22px;
+      font-size: 14px; opacity: 0; pointer-events: none; transition: .25s; z-index: 90; max-width: 84vw; text-align: center;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.err { background: rgba(229,72,77,.95); }
+
+    .spinner {
+      width: 20px; height: 20px; border: 2px solid #fff; border-top-color: transparent;
+      border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; vertical-align: -4px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-wrap { text-align: center; padding: 60px 0; color: var(--muted); }
+    /* 启动过渡层（2026-10-30 需求 4）：占满整屏，避免登录态恢复期间先闪一下登录页。 */
+    /* ⚠️ 用 position:fixed;inset:0 而不是 flex:1 + 100vh：
+       本 WebView 里 `vh` 恒为 0（见文首说明），`.app` 会塌成内容高度，
+       过渡层就只盖住屏幕顶部一小块、下面还是空白 —— 实测正是如此。
+       fixed inset:0 不依赖父高度，稳。 */
+    .boot-wrap {
+      position: fixed; inset: 0; z-index: 200; background: var(--bg);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 14px; color: var(--muted); font-size: 13px;
+    }
+    .boot-wrap p { margin: 0; }
+    .spinner.boot { border-color: #dfe4ef; border-top-color: var(--primary); width: 26px; height: 26px; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ================= 启动过渡（2026-10-30 需求 4）=================
+       有登录态时，`getSession()` 要等云端回一次，这段时间原先直接露出登录页，
+       看起来像"被退出了"再"又登回来"。现在先显示一个空白过渡层，
+       bootstrap 结束（进主界面 / 确认未登录）时才把它撤掉。 -->
+  <section id="bootView" class="boot-wrap">
+    <div class="spinner boot"></div>
+    <p>正在恢复登录…</p>
+  </section>
+
+  <!-- ================= 登录 ================= -->
+  <section id="loginView" class="login-wrap hidden">
+    <div class="brand">
+      <div class="logo">📊</div>
+      <h1>成绩收集统计</h1>
+      <p>学生填成绩 · 班长管全班</p>
+    </div>
+
+    <!-- 验证码登录与密码登录各用一块面板：密码方式登录本页自己的云身份，
+         与原生注入的 App token 不是同一套，切换只换表单，下方 OAuth 始终可用。 -->
+    <div id="otpLoginBox">
+    <div class="tabs">
+      <button id="tabPhone" class="active" type="button">手机号登录</button>
+      <button id="tabEmail" type="button">邮箱登录</button>
+    </div>
+
+    <div class="field">
+      <label id="accountLabel" for="accountInput">手机号</label>
+      <input id="accountInput" type="text" inputmode="numeric" placeholder="请输入 11 位手机号" autocomplete="tel" />
+    </div>
+    <div class="field">
+      <label for="codeInput">验证码</label>
+      <div class="row">
+        <input id="codeInput" type="text" inputmode="numeric" placeholder="6 位验证码" autocomplete="one-time-code" />
+        <button id="codeBtn" class="btn code" type="button">获取验证码</button>
+      </div>
+    </div>
+    <button id="loginBtn" class="btn" type="button">登录 / 注册</button>
+    <div id="loginMsg" class="msg"></div>
+    <button id="pwdEntry" class="btn ghost" type="button" style="margin-top:10px">使用密码登录</button>
+    </div>
+
+    <div id="pwdLoginBox" class="hidden">
+    <div class="divider"><span>使用密码登录</span></div>
+    <div class="field">
+      <label for="pwdPhoneInput">手机号</label>
+      <input id="pwdPhoneInput" type="text" inputmode="numeric" placeholder="请输入 11 位手机号" autocomplete="username" />
+    </div>
+    <div class="field">
+      <label for="pwdInput">密码</label>
+      <input id="pwdInput" type="password" placeholder="请输入密码" autocomplete="current-password" />
+    </div>
+    <button id="pwdLoginBtn" class="btn" type="button">登录</button>
+    <div id="pwdLoginMsg" class="msg"></div>
+    <button id="otpEntry" class="btn ghost" type="button" style="margin-top:10px">返回验证码登录</button>
+    </div>
+
+    <div class="divider" id="otherWaysDivider"><span>其他方式</span></div>
+    <button id="wxBtn" class="btn wx" type="button">微信登录</button>
+    <button id="wbBtn" class="btn wb" type="button">使用 WorkBuddy 登录</button>
+    <div id="embedHint" class="hint hidden">在 MoreCheck 内请用手机号 / 邮箱验证码登录。登录状态会被保留，下次打开无需重复登录。</div>
+    <div class="hint">未注册的手机号/邮箱将自动创建账号，数据保存在云端</div>
+  </section>
+
+  <!-- ================= 选择身份 ================= -->
+  <section id="roleView" class="role-wrap hidden">
+    <div class="brand">
+      <div class="logo">🎓</div>
+      <h1>选择你的身份</h1>
+      <p>身份决定你能看到和修改哪些成绩</p>
+    </div>
+    <div class="field">
+      <label for="realName">你的姓名</label>
+      <input id="realName" type="text" placeholder="请输入真实姓名" />
+    </div>
+    <div class="role-card sel" id="roleStudentCard" data-role="student">
+      <div class="rt"><span class="ico">🙋</span><span>学生</span></div>
+      <div class="rd">向班长获取班级码，加入班级后只能填写和查看自己的成绩，看不到其他同学的成绩。</div>
+    </div>
+    <div class="role-card" id="roleAdminCard" data-role="admin">
+      <div class="rt"><span class="ico">🧑‍🏫</span><span>班长（管理员）</span></div>
+      <div class="rd">创建班级并生成班级码，可以查看和修改全班所有同学的成绩，还能看到统计分析。</div>
+    </div>
+    <button id="roleConfirmBtn" class="btn" type="button" style="margin-top:8px">下一步</button>
+    <div id="roleMsg" class="msg"></div>
+  </section>
+
+  <!-- ================= 主界面 ================= -->
+  <section id="appView" class="hidden">
+    <header class="topbar">
+      <div class="title-row">
+        <h2 id="pageTitle">成绩</h2>
+        <div class="user">
+          <span id="userAvatar" class="avatar">我</span>
+          <button id="logoutBtn" class="logout" type="button">退出</button>
+        </div>
+      </div>
+      <p id="pageSub" class="sub"></p>
+    </header>
+
+    <!-- 首页 -->
+    <div id="homePage" class="page">
+      <div id="classChips" class="chip-row"></div>
+      <div id="homeBody"></div>
+      <button id="fabBtn" class="fab hidden" type="button" aria-label="新建考试">＋</button>
+    </div>
+
+    <!-- 考试详情 -->
+    <div id="detailPage" class="page hidden">
+      <div class="detail-head">
+        <button id="backBtn" class="back" type="button">‹ 返回</button>
+        <h2 id="dTitle"></h2>
+        <div id="dMeta" class="meta"></div>
+      </div>
+
+      <div id="adminBody">
+        <div id="kpiGrid" class="kpi-grid"></div>
+
+        <div class="section-title">分数分布</div>
+        <div class="card"><div id="hist" class="hist"></div></div>
+
+        <div class="section-title">全班成绩 <span class="count" id="rankCount"></span></div>
+        <div id="rankList"></div>
+
+        <div class="section-title">录入 / 批量导入</div>
+        <div class="card">
+          <div class="seg">
+            <button id="modeSingle" class="active" type="button">单个录入</button>
+            <button id="modeBatch" type="button">批量导入</button>
+          </div>
+
+          <div id="singlePane">
+            <div class="field">
+              <label for="stuName">选择同学</label>
+              <select id="stuName"></select>
+            </div>
+            <div class="field">
+              <label for="stuScore">分数</label>
+              <input id="stuScore" type="number" inputmode="decimal" step="0.5" placeholder="0 - 满分" />
+            </div>
+            <button id="addStudentBtn" class="btn" type="button">保存成绩</button>
+          </div>
+
+          <div id="batchPane" class="hidden">
+            <p class="import-help">
+              每行一条记录，用空格或逗号分隔：<br />
+              <code>姓名 分数</code> 或 <code>姓名,学号,分数</code><br />
+              姓名需与班级名册一致，例如：<br />
+              <code>张三 92</code><br />
+              <code>李四,2026002,85.5</code>
+            </p>
+            <div class="field">
+              <textarea id="batchText" placeholder="张三 92&#10;李四,2026002,85.5&#10;王五 78"></textarea>
+            </div>
+            <button id="batchImportBtn" class="btn" type="button">批量导入</button>
+          </div>
+        </div>
+
+        <div class="sheet-actions" style="margin-top:6px">
+          <button id="editExamBtn" class="btn ghost" type="button" style="margin-top:0">编辑考试</button>
+          <button id="delExamBtn" class="btn ghost" type="button" style="margin-top:0;color:var(--danger)">删除考试</button>
+        </div>
+      </div>
+
+      <!-- 学生端：只填自己的成绩 -->
+      <div id="studentBody" class="hidden">
+        <div class="section-title">我的成绩</div>
+        <div class="card">
+          <div class="field">
+            <label for="myScore">填写本次分数</label>
+            <input id="myScore" type="number" inputmode="decimal" step="0.5" placeholder="0 - 满分" />
+            <p id="myScoreTip" class="import-help" style="margin:8px 0 0"></p>
+          </div>
+          <button id="myScoreBtn" class="btn" type="button">保存我的成绩</button>
+          <p class="import-help" style="margin:12px 0 0">你只能填写和修改自己的成绩，其他同学的分数由班长录入和管理。</p>
+        </div>
+        <div class="section-title">填写记录</div>
+        <div class="card">
+          <div id="myScoreHistory"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 成员管理 -->
+    <div id="memberPage" class="page hidden">
+      <div class="detail-head">
+        <button id="memberBackBtn" class="back" type="button">‹ 返回</button>
+        <h2>班级成员</h2>
+        <div class="meta" id="memberMeta"></div>
+      </div>
+      <div id="memberList"></div>
+      <button id="addMemberBtn" class="btn" type="button" style="margin-top:8px">添加同学</button>
+    </div>
+
+    <!-- 设置 -->
+    <div id="settingPage" class="page hidden">
+      <div class="detail-head">
+        <button id="settingBackBtn" class="back" type="button">‹ 返回</button>
+        <h2>设置</h2>
+        <div class="meta" id="settingMeta"></div>
+      </div>
+      <div class="card">
+        <div class="section-title" style="margin-top:0">我的身份</div>
+        <p id="myRoleText" style="font-size:14px;color:var(--muted);margin:0 0 10px"></p>
+        <button id="switchRoleBtn" class="btn soft" type="button">切换身份</button>
+      </div>
+      <div class="card">
+        <div class="section-title" style="margin-top:0">班级</div>
+        <button id="createClassBtn" class="btn soft hidden" type="button">创建新班级</button>
+        <button id="joinClassBtn" class="btn soft" type="button">加入其他班级</button>
+        <button id="leaveClassBtn" class="btn ghost" type="button">退出当前班级</button>
+      </div>
+      <div id="adminClassCard" class="card hidden">
+        <div class="section-title" style="margin-top:0">班级管理</div>
+        <div class="code-box">
+          <div>
+            <div class="cd" id="settingCode"></div>
+            <div class="cl">班级码 · 发给同学即可加入</div>
+          </div>
+          <button id="copyCodeBtn" class="btn sm" type="button">复制</button>
+        </div>
+        <button id="deleteClassBtn" class="btn ghost" type="button;color:var(--danger)">删除班级</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ================= 弹层 ================= -->
+<div id="mask" class="mask hidden">
+  <div class="sheet" id="sheet"></div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="./workbuddy-cloud-sdk.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ============ 云服务公开配置（由 WorkBuddy 云服务下发） ============
+  var publicConfig = {
+    endpoint: "https://score-stats-18758.app.workbuddy.host",
+    oauthRelayBaseUrl: "https://www.workbuddy.cn/v2/as/genie-baas/oauth",
+    publishableKey: "wbpk_V3bHbAVxhIpdkHKIL1S2Pg_yYrpff66fA4oUH5ONhJzU6E4KTjdZ1w1"
+  };
+
+  var cloud = WorkBuddyCloud.createWorkBuddyCloud({
+    endpoint: publicConfig.endpoint,
+    oauthRelayBaseUrl: publicConfig.oauthRelayBaseUrl,
+    publishableKey: publicConfig.publishableKey
+  });
+
+  var $ = function (id) { return document.getElementById(id); };
+  var state = {
+    tab: 'phone',
+    pendingOtp: null,
+    sending: false,
+    countdownTimer: null,
+    user: null,
+    profile: null,          // { user_id, role, display_name }
+    memberships: [],        // fn_my_memberships 返回
+    active: null,           // 当前班级成员身份 { class_id, class_name, join_code, my_role, my_member_id }
+    exams: [],
+    members: [],
+    examScores: [],
+    currentExam: null,
+    importMode: 'single',
+    pendingRole: 'student',
+    autoPrompted: false
+  };
+
+  // ============ 嵌入模式（MoreCheck App 等原生宿主内嵌网页时） ============
+  //
+  // 判定方式（满足其一即视为嵌入）：
+  //   1) URL 带 `?embedded=1` —— 由原生宿主显式声明；
+  //   2) 页面里存在原生注入的 `window.MoreCheckHost` —— 原生 addJavascriptInterface 注入。
+  //
+  // 嵌入模式下的差异只有一处（其余逻辑与网页版完全一致，共用同一份代码）：
+  //   隐藏「微信登录 / WorkBuddy 登录」两个 OAuth 按钮。
+  //   原因：OAuth 要整页跳到第三方域名授权，再回调回当前 origin 的根路径
+  //   （见 redirectTarget）。在 App 的 assets 映射下，回调会落到**线上部署版**，
+  //   用户会「跳出应用」，登录完也不在 App 里，属于明显的体验割裂。
+  //   验证码登录是纯接口调用，WebView 内完全可用，因此保留。
+  //
+  // ⚠️ 登录态持久化与本模式无关：SDK 把会话写在 localStorage
+  //    （键 `workbuddy-cloud.session.<publishableKey>`），只要宿主用**稳定的 https origin**
+  //    加载本页（MoreCheck 用 WebViewAssetLoader 映射到
+  //    `https://score-stats-18758.app.workbuddy.host`），会话就会长期保留。
+  var IS_EMBEDDED = (function () {
+    try {
+      if (/[?&]embedded=1(&|$)/.test(location.search)) return true;
+    } catch (e) { /* ignore */ }
+    try {
+      return typeof window.MoreCheckHost !== 'undefined' && !!window.MoreCheckHost;
+    } catch (e) {
+      return false;
+    }
+  })();
+
+  // 向原生宿主推送事件（宿主不在场时静默丢弃，网页版不受影响）。
+  // 事件名：'ready' | 'login' | 'logout' | 'error'
+  function notifyHost(event, payload) {
+    if (!IS_EMBEDDED) return;
+    try {
+      var h = window.MoreCheckHost;
+      if (h && typeof h.notify === 'function') {
+        h.notify(event, payload == null ? '' : String(payload));
+      }
+    } catch (e) { /* 宿主已销毁 */ }
+  }
+
+  // 嵌入模式下的界面适配：收起 OAuth 入口，给出验证码登录的说明。
+  function applyEmbeddedMode() {
+    if (!IS_EMBEDDED) return;
+    var wx = $('wxBtn'), wb = $('wbBtn'), dv = $('otherWaysDivider'), hint = $('embedHint');
+    if (wx) wx.classList.add('hidden');
+    if (wb) wb.classList.add('hidden');
+    if (dv) dv.classList.add('hidden');
+    if (hint) hint.classList.remove('hidden');
+
+    // 检测 localStorage 是否真的可用。
+    // ⚠️ SDK 的 resolveStorage() 在 localStorage 不可用时**静默回落到内存存储**，
+    //    于是"当次看着已登录"，但 WebView 一销毁登录态就没了 —— 表现就是"每次都要重新登录"。
+    //    不透明 origin（file://）会触发这个坑，所以宿主必须用 https 映射加载本页。
+    var storageOk = false;
+    try {
+      var probe = '__score_storage_probe__';
+      localStorage.setItem(probe, '1');
+      localStorage.removeItem(probe);
+      storageOk = true;
+    } catch (e) { storageOk = false; }
+    if (!storageOk) {
+      notifyHost('error', 'localStorage 不可用，登录状态无法保留');
+    }
+  }
+
+  // 供原生宿主调用的极简 API（只在嵌入模式暴露；网页版返回 null 以示"无宿主"）。
+  window.MoreCheckScore = {
+    isEmbedded: IS_EMBEDDED,
+    version: '1.0',
+    // 当前是否已登录
+    isLoggedIn: function () {
+      return !!(state.user && state.user.id);
+    },
+    // 当前用户摘要（含角色与所在班级），未登录返回 null
+    getUser: function () {
+      if (!state.user || !state.user.id) return null;
+      return {
+        id: state.user.id,
+        name: state.user.name || '',
+        role: state.profile ? state.profile.role : 'student',
+        className: state.active ? state.active.class_name : ''
+      };
+    },
+    // 让原生主动退出登录（等价于点「设置 → 退出登录」）
+    logout: function () {
+      var btn = $('logoutBtn');
+      if (btn && typeof btn.click === 'function') btn.click();
+    }
+  };
+
+  function toast(msg, kind) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (kind === 'err' ? ' err' : '');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(function () { t.className = 'toast'; }, 2400);
+  }
+  function showLoginMsg(text, kind) {
+    var el = $('loginMsg');
+    el.textContent = text || '';
+    el.className = 'msg' + (kind ? ' ' + kind : '');
+  }
+  function showRoleMsg(text, kind) {
+    var el = $('roleMsg');
+    el.textContent = text || '';
+    el.className = 'msg' + (kind ? ' ' + kind : '');
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function num(v) { var n = parseFloat(v); return isNaN(n) ? null : n; }
+  function errText(e) {
+    if (!e) return '操作失败';
+    if (typeof e === 'string') return e;
+    return e.message || e.details || '操作失败';
+  }
+
+  // RPC 封装：统一抛错
+  function rpc(name, args) {
+    return cloud.database.rpc(name, args || {}).then(function (r) {
+      if (r.error) throw r.error;
+      return r.data;
+    });
+  }
+
+  // ============ 授权登录（微信 / WorkBuddy） ============
+  function redirectTarget() {
+    var back = new URL(location.href);
+    back.pathname = '/';
+    ['code', 'state', 'provider'].forEach(function (k) { back.searchParams.delete(k); });
+    return back.toString();
+  }
+  function startOAuth(provider, btnId) {
+    var btn = $(btnId);
+    btn.disabled = true;
+    showLoginMsg('正在跳转到授权页…');
+    cloud.auth.signInWithOAuth({ provider: provider, redirectTo: redirectTarget() })
+      .then(function (res) {
+        if (res.error) {
+          showLoginMsg(res.error.message || '登录启动失败，请重试', 'err');
+          btn.disabled = false;
+          return;
+        }
+        location.assign(res.data.url);
+      })
+      .catch(function (e) {
+        showLoginMsg((e && e.message) || '登录启动失败，请重试', 'err');
+        btn.disabled = false;
+      });
+  }
+
+  // ============ 授权回调分发（必须在路由守卫之前） ============
+  function restoreAuth() {
+    var url = new URL(location.href);
+    if (!url.searchParams.has('code') && !url.searchParams.has('error')) return Promise.resolve(false);
+    var provider = url.searchParams.get('provider');
+    if (provider !== 'workbuddy' && provider !== 'wechat') {
+      showLoginMsg('授权回调缺少有效的登录方式，请重新登录。', 'err');
+      return Promise.resolve(true);
+    }
+    var handleCallback = provider === 'workbuddy'
+      ? cloud.auth.handleWorkBuddyCallback
+      : cloud.auth.handleWechatWebCallback;
+    if (typeof handleCallback !== 'function') {
+      showLoginMsg('当前 SDK 版本暂不支持此登录方式，请联系应用管理员。', 'err');
+      return Promise.resolve(true);
+    }
+    return Promise.resolve(handleCallback.call(cloud.auth)).then(function (res) {
+      if (res.error) { showLoginMsg(res.error.message || '授权失败，请重试。', 'err'); return true; }
+      if (res.data) {
+        ['code', 'state', 'provider'].forEach(function (k) { url.searchParams.delete(k); });
+        history.replaceState(null, '', url.pathname + url.search + url.hash);
+        enterApp(res.data.user);
+        return true;
+      }
+      return false;
+    }).catch(function (e) {
+      showLoginMsg((e && e.message) || '授权失败，请重试。', 'err');
+      return true;
+    });
+  }
+
+  // ============ 验证码登录 ============
+  function switchTab(t) {
+    state.tab = t;
+    $('tabPhone').classList.toggle('active', t === 'phone');
+    $('tabEmail').classList.toggle('active', t === 'email');
+    var acc = $('accountInput');
+    var label = $('accountLabel');
+    if (t === 'phone') {
+      label.textContent = '手机号';
+      acc.type = 'text'; acc.inputMode = 'numeric'; acc.placeholder = '请输入 11 位手机号';
+    } else {
+      label.textContent = '邮箱';
+      acc.type = 'email'; acc.inputMode = 'email'; acc.placeholder = '请输入邮箱地址';
+    }
+    acc.value = ''; state.pendingOtp = null; showLoginMsg('');
+  }
+
+  function sendCode() {
+    if (state.sending) return;
+    var acc = $('accountInput').value.trim();
+    if (state.tab === 'phone') {
+      if (!/^1\d{10}$/.test(acc)) { showLoginMsg('请输入正确的 11 位手机号', 'err'); return; }
+    } else {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(acc)) { showLoginMsg('请输入正确的邮箱地址', 'err'); return; }
+    }
+    state.sending = true;
+    var btn = $('codeBtn');
+    btn.disabled = true;
+    showLoginMsg('正在发送验证码…');
+    var payload = state.tab === 'phone' ? { phone: acc } : { email: acc };
+    cloud.auth.sendOtp(payload).then(function (sent) {
+      if (sent.error) {
+        showLoginMsg(sent.error.message || '发送失败，请重试', 'err');
+        btn.disabled = false; state.sending = false;
+        return;
+      }
+      state.pendingOtp = {
+        phone: state.tab === 'phone' ? acc : undefined,
+        email: state.tab === 'email' ? acc : undefined,
+        verificationId: sent.data.verificationId,
+        isExistingUser: sent.data.isExistingUser
+      };
+      showLoginMsg('验证码已发送，请查收', 'info');
+      startCountdown(); state.sending = false;
+    }).catch(function (e) {
+      showLoginMsg((e && e.message) || '发送失败，请重试', 'err');
+      btn.disabled = false; state.sending = false;
+    });
+  }
+
+  function startCountdown() {
+    var btn = $('codeBtn');
+    var left = 60;
+    btn.disabled = true; btn.textContent = left + 's';
+    clearInterval(state.countdownTimer);
+    state.countdownTimer = setInterval(function () {
+      left -= 1;
+      if (left <= 0) { clearInterval(state.countdownTimer); btn.textContent = '获取验证码'; btn.disabled = false; }
+      else btn.textContent = left + 's';
+    }, 1000);
+  }
+
+  function submitLogin() {
+    if (!state.pendingOtp) { showLoginMsg('请先获取验证码', 'err'); return; }
+    var code = $('codeInput').value.trim();
+    if (!code) { showLoginMsg('请输入验证码', 'err'); return; }
+    var btn = $('loginBtn');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+    var p = state.pendingOtp;
+    var args = {
+      verificationId: p.verificationId,
+      isExistingUser: p.isExistingUser,
+      token: code
+    };
+    if (p.phone) args.phone = p.phone; else args.email = p.email;
+
+    cloud.auth.verifyOtp(args).then(function (done) {
+      if (done.error) {
+        showLoginMsg(done.error.message || '验证失败，请重试', 'err');
+        btn.disabled = false; btn.textContent = '登录 / 注册';
+        return;
+      }
+      state.pendingOtp = null;
+      enterApp(done.data.user);
+    }).catch(function (e) {
+      showLoginMsg((e && e.message) || '验证失败，请重试', 'err');
+      btn.disabled = false; btn.textContent = '登录 / 注册';
+    });
+  }
+
+  /* 密码登录：调本页 SDK 的 /v1/signin，登录的是本页自己的云应用身份
+     （另一把 wbpk key），与原生注入的 App token 不是同一套，所以成功后
+     只走本页 enterApp，会话由 SDK 自动写 localStorage，不碰原生。 */
+  function showPwdLoginMsg(text, kind) {
+    var el = $('pwdLoginMsg');
+    el.textContent = text || '';
+    el.className = 'msg' + (kind ? ' ' + kind : '');
+  }
+  function showPasswordLogin() {
+    $('otpLoginBox').classList.add('hidden');
+    $('pwdLoginBox').classList.remove('hidden');
+    showLoginMsg('');
+    showPwdLoginMsg('');
+  }
+  function showOtpLogin() {
+    $('pwdLoginBox').classList.add('hidden');
+    $('otpLoginBox').classList.remove('hidden');
+    showPwdLoginMsg('');
+    showLoginMsg('');
+  }
+  function submitPasswordLogin() {
+    var btn = $('pwdLoginBtn');
+    if (btn.disabled) return;
+    var phone = $('pwdPhoneInput').value.trim();
+    var password = $('pwdInput').value;
+    if (!/^1\d{10}$/.test(phone)) { showPwdLoginMsg('请输入正确的 11 位手机号', 'err'); return; }
+    if (!password) { showPwdLoginMsg('请输入密码', 'err'); return; }
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+    showPwdLoginMsg('正在登录…');
+    /* resolveAuthIdentifier 要求 email / phone 恰好其一，normalizePhone 会
+       自行补 +86 前缀，所以这里传用户输入的裸手机号，别自己拼区号。 */
+    cloud.auth.signInWithPassword({ phone: phone, password: password }).then(function (done) {
+      btn.disabled = false; btn.textContent = '登录';
+      if (done.error) { showPwdLoginMsg(done.error.message || '登录失败，请重试', 'err'); return; }
+      showPwdLoginMsg('');
+      enterApp(done.data.user);
+    }).catch(function (e) {
+      btn.disabled = false; btn.textContent = '登录';
+      showPwdLoginMsg((e && e.message) || '登录失败，请重试', 'err');
+    });
+  }
+
+  // ============ 界面切换 ============
+  function enterApp(user) {
+    // 登录态恢复成功时的**唯一必经出口**，必须在这里撤过渡层：
+    // 启动过渡层是盖在整屏上的（z 序靠 DOM 先后，不看层级），漏撤就会一直停在
+    // 「正在恢复登录…」，界面看着像卡死 —— 而这正是本需求要修的那条路径。
+    finishBoot();
+    state.user = user || null;
+    var name = (user && (user.name || user.phone || user.email)) || '我';
+    $('userAvatar').textContent = String(name).slice(0, 1).toUpperCase();
+    $('loginView').classList.add('hidden');
+    $('roleView').classList.add('hidden');
+    $('appView').classList.remove('hidden');
+    // 通知原生宿主：已进入登录态（宿主可用于刷新标题栏 / 收起登录页）
+    notifyHost('login', user && user.id ? String(user.id) : '');
+    initProfile();
+  }
+
+  function showApp() {
+    $('loginView').classList.add('hidden');
+    $('roleView').classList.add('hidden');
+    $('appView').classList.remove('hidden');
+  }
+
+  // ============ 身份初始化 ============
+  function initProfile() {
+    rpc('fn_my_profile')
+      .then(function (p) {
+        if (!p) {
+          // 首次使用：选择身份
+          $('appView').classList.add('hidden');
+          $('roleView').classList.remove('hidden');
+          $('realName').value = (state.user && (state.user.name || '')) || '';
+          return;
+        }
+        state.profile = p;
+        return loadMemberships();
+      })
+      .catch(function (e) {
+        toast(errText(e), 'err');
+        showApp();
+      });
+  }
+
+  function confirmRole() {
+    var name = $('realName').value.trim();
+    if (!name) { showRoleMsg('请输入你的姓名', 'err'); return; }
+    var btn = $('roleConfirmBtn');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+    rpc('fn_ensure_profile', { p_role: state.pendingRole, p_display_name: name })
+      .then(function (p) {
+        state.profile = p;
+        showApp();
+        return loadMemberships();
+      })
+      .catch(function (e) { showRoleMsg(errText(e), 'err'); })
+      .then(function () { btn.disabled = false; btn.textContent = '下一步'; });
+  }
+
+  function loadMemberships() {
+    return rpc('fn_my_memberships').then(function (list) {
+      state.memberships = list || [];
+      if (!state.memberships.length) {
+        state.active = null;
+        renderHome();
+        if (!state.autoPrompted) {
+          state.autoPrompted = true;
+          if (state.profile && state.profile.role === 'admin') openCreateClassSheet();
+          else openJoinSheet(true);
+        }
+        return;
+      }
+      var keep = null;
+      if (state.active) {
+        state.memberships.forEach(function (m) { if (m.class_id === state.active.class_id) keep = m; });
+      }
+      if (!keep) {
+        keep = null;
+        state.memberships.forEach(function (m) { if (!keep && m.my_role === 'admin') keep = m; });
+        if (!keep) keep = state.memberships[0];
+      }
+      state.active = keep;
+      renderHome();
+    }).catch(function (e) {
+      toast(errText(e), 'err');
+      showApp();
+    });
+  }
+
+  function isAdmin() { return !!(state.active && state.active.my_role === 'admin'); }
+
+  // ============ 首页 ============
+  function showPage(which) {
+    $('homePage').classList.toggle('hidden', which !== 'home');
+    $('detailPage').classList.toggle('hidden', which !== 'detail');
+    $('memberPage').classList.toggle('hidden', which !== 'member');
+    $('settingPage').classList.toggle('hidden', which !== 'setting');
+    $('fabBtn').classList.toggle('hidden', !(which === 'home' && isAdmin()));
+    if (which === 'home') window.scrollTo(0, 0);
+  }
+
+  function renderChips() {
+    var box = $('classChips');
+    if (state.memberships.length <= 1) { box.innerHTML = ''; return; }
+    box.innerHTML = state.memberships.map(function (m) {
+      var label = m.class_name + (m.my_role === 'admin' ? ' ★' : '');
+      return '<div class="chip' + (state.active && m.class_id === state.active.class_id ? ' active' : '') +
+        '" data-cid="' + m.class_id + '">' + esc(label) + '</div>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('[data-cid]'), function (el) {
+      el.addEventListener('click', function () {
+        var cid = parseInt(el.getAttribute('data-cid'), 10);
+        state.memberships.forEach(function (m) { if (m.class_id === cid) state.active = m; });
+        renderHome();
+      });
+    });
+  }
+
+  function renderHome() {
+    renderChips();
+    var box = $('homeBody');
+    if (!state.active) {
+      $('pageTitle').textContent = '成绩收集统计';
+      $('pageSub').textContent = state.profile && state.profile.role === 'admin' ? '你是班长管理员' : '你是学生';
+      box.innerHTML = '<div class="card">' +
+        '<div class="section-title" style="margin-top:0">' + (state.profile && state.profile.role === 'admin' ? '创建你的班级' : '加入你的班级') + '</div>' +
+        '<p style="font-size:14px;color:var(--muted);margin:0 0 12px">' +
+        (state.profile && state.profile.role === 'admin'
+          ? '创建班级后会自动生成班级码，把它发给同学，同学凭码加入即可。'
+          : '向班长获取 6 位班级码，加入班级后就可以填写自己的成绩。') + '</p>' +
+        '<button class="btn" id="homePrimaryBtn" type="button">' +
+        (state.profile && state.profile.role === 'admin' ? '创建班级' : '输入班级码加入') + '</button>' +
+        '</div>' +
+        '<div class="card"><button class="link-btn" id="homeSwitchRoleBtn" type="button">切换我的身份 ›</button></div>';
+      $('homePrimaryBtn').addEventListener('click', function () {
+        if (state.profile && state.profile.role === 'admin') openCreateClassSheet();
+        else openJoinSheet(true);
+      });
+      $('homeSwitchRoleBtn').addEventListener('click', openSwitchRoleSheet);
+      $('fabBtn').classList.add('hidden');
+      return;
+    }
+
+    var admin = isAdmin();
+    $('pageTitle').textContent = admin ? '班级成绩' : '我的成绩';
+    $('pageSub').textContent = state.active.class_name + (admin ? ' · 班长视图' : ' · 学生视图');
+    $('fabBtn').classList.toggle('hidden', !admin);
+
+    box.innerHTML = '<div class="loading-wrap">加载中…</div>';
+    loadExams();
+  }
+
+  function loadExams() {
+    var cid = state.active.class_id;
+    return cloud.database.from('exams').select('*').eq('class_id', cid).order('created_at', { ascending: false })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        state.exams = r.data || [];
+        renderExamList();
+      })
+      .catch(function (e) {
+        $('homeBody').innerHTML = '<div class="empty"><div class="ico">⚠️</div><p>' + esc(errText(e)) + '</p></div>';
+      });
+  }
+
+  function renderExamList() {
+    var box = $('homeBody');
+    var admin = isAdmin();
+    if (!state.exams.length) {
+      box.innerHTML = '<div class="empty"><div class="ico">📝</div><p>还没有考试</p>' +
+        '<p style="font-size:13px">' + (admin ? '点右下角 ＋ 创建第一场考试' : '等待班长创建考试后会出现在这里') + '</p></div>' + homeNav();
+      Array.prototype.forEach.call(box.querySelectorAll('[data-go]'), function (el) {
+        el.addEventListener('click', function () {
+          var go = el.getAttribute('data-go');
+          if (go === 'member') openMemberPage(); else openSettingPage();
+        });
+      });
+      return;
+    }
+    box.innerHTML = state.exams.map(function (e) {
+      return '<div class="exam-item" data-id="' + e.id + '">' +
+        '<div class="row1"><span class="nm">' + esc(e.name) + '</span>' +
+        '<span class="badge">' + esc(e.subject || '未分科') + '</span></div>' +
+        '<div class="meta">' + esc(e.exam_date || '未定日期') + ' · 满分 ' + esc(e.full_score) + ' · 及格线 ' + esc(e.pass_score) + '</div>' +
+        (admin
+          ? '<div class="mini-stats"><span>点击查看全班成绩与统计</span></div>'
+          : '<div class="mini-stats"><span>点击填写 / 修改我的成绩</span></div>') +
+        '</div>';
+    }).join('') + homeNav();
+    Array.prototype.forEach.call(box.querySelectorAll('.exam-item'), function (el) {
+      el.addEventListener('click', function () { openExam(parseInt(el.getAttribute('data-id'), 10)); });
+    });
+    Array.prototype.forEach.call(box.querySelectorAll('[data-go]'), function (el) {
+      el.addEventListener('click', function () {
+        var go = el.getAttribute('data-go');
+        if (go === 'member') openMemberPage(); else openSettingPage();
+      });
+    });
+  }
+
+  function homeNav() {
+    var admin = isAdmin();
+    return '<div class="card" style="margin-top:14px">' +
+      '<div class="section-title" style="margin-top:0">更多</div>' +
+      (admin ? '<button class="link-btn" data-go="member" type="button" style="display:block;width:100%;text-align:left;padding:10px 0">班级成员管理 ›</button>' : '') +
+      '<button class="link-btn" data-go="setting" type="button" style="display:block;width:100%;text-align:left;padding:10px 0">设置与身份 ›</button>' +
+      '</div>';
+  }
+
+  // ============ 考试详情 ============
+  function openExam(id) {
+    var exam = state.exams.filter(function (e) { return e.id === id; })[0];
+    if (!exam) return;
+    state.currentExam = exam;
+    showPage('detail');
+    $('dTitle').textContent = exam.name;
+    $('dMeta').textContent = [exam.subject, exam.exam_date].filter(Boolean).join(' · ') +
+      ' · 满分 ' + exam.full_score + ' · 及格线 ' + exam.pass_score;
+    var admin = isAdmin();
+    $('adminBody').classList.toggle('hidden', !admin);
+    $('studentBody').classList.toggle('hidden', admin);
+    if (admin) {
+      $('kpiGrid').innerHTML = '';
+      $('hist').innerHTML = '';
+      $('rankList').innerHTML = '<div class="loading-wrap">加载中…</div>';
+      loadAdminExam();
+    } else {
+      $('myScoreHistory').innerHTML = '<div class="loading-wrap">加载中…</div>';
+      loadStudentExam();
+    }
+  }
+
+  function loadAdminExam() {
+    var examId = state.currentExam.id;
+    var cid = state.active.class_id;
+    return Promise.all([
+      cloud.database.from('class_members').select('*').eq('class_id', cid),
+      cloud.database.from('scores').select('*').eq('exam_id', examId).eq('class_id', cid)
+    ]).then(function (rs) {
+      if (rs[0].error) throw rs[0].error;
+      if (rs[1].error) throw rs[1].error;
+      state.members = rs[0].data || [];
+      state.examScores = rs[1].data || [];
+      renderAdminDetail();
+    }).catch(function (e) {
+      $('rankList').innerHTML = '<div class="empty"><div class="ico">⚠️</div><p>' + esc(errText(e)) + '</p></div>';
+    });
+  }
+
+  function scoreMap() {
+    var m = {};
+    state.examScores.forEach(function (s) { m[s.member_id] = s; });
+    return m;
+  }
+
+  function renderAdminDetail() {
+    var sm = scoreMap();
+    var students = state.members.map(function (mem) {
+      var sc = sm[mem.id];
+      return {
+        id: mem.id, name: mem.name || '未命名', no: mem.student_no,
+        role: mem.role, bound: !!mem.user_id,
+        score: sc && sc.score != null ? parseFloat(sc.score) : null
+      };
+    });
+    students.sort(function (a, b) {
+      if (a.score == null && b.score == null) return 0;
+      if (a.score == null) return 1;
+      if (b.score == null) return -1;
+      return b.score - a.score;
+    });
+
+    var vals = students.filter(function (s) { return s.score != null; }).map(function (s) { return s.score; });
+    var full = parseFloat(state.currentExam.full_score) || 100;
+    var pass = parseFloat(state.currentExam.pass_score) || 60;
+    var sum = vals.reduce(function (a, b) { return a + b; }, 0);
+    var avg = vals.length ? sum / vals.length : null;
+    var max = vals.length ? Math.max.apply(null, vals) : null;
+    var min = vals.length ? Math.min.apply(null, vals) : null;
+    var passCount = vals.filter(function (v) { return v >= pass; }).length;
+    var sorted = vals.slice().sort(function (a, b) { return a - b; });
+    var median = null;
+    if (sorted.length) {
+      var mid = Math.floor(sorted.length / 2);
+      median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+    var segCount = 5, buckets = [];
+    for (var i = 0; i < segCount; i++) buckets.push({ lo: full * i / segCount, hi: full * (i + 1) / segCount, n: 0 });
+    vals.forEach(function (v) {
+      var idx = Math.min(segCount - 1, Math.max(0, Math.floor(v / full * segCount)));
+      buckets[idx].n++;
+    });
+
+    var kpis = [
+      { v: vals.length + ' / ' + students.length, l: '已录入 / 班级人数' },
+      { v: avg == null ? '—' : (Math.round(avg * 10) / 10), l: '平均分' },
+      { v: max == null ? '—' : max, l: '最高分' },
+      { v: min == null ? '—' : min, l: '最低分' },
+      { v: median == null ? '—' : median, l: '中位数' },
+      { v: vals.length ? (Math.round(passCount / vals.length * 1000) / 10) + '%' : '—', l: '及格率', cls: !vals.length ? '' : (passCount / vals.length >= 0.6 ? 'ok' : 'warn') }
+    ];
+    $('kpiGrid').innerHTML = kpis.map(function (k) {
+      return '<div class="kpi"><div class="v ' + (k.cls || '') + '">' + esc(k.v) + '</div><div class="l">' + esc(k.l) + '</div></div>';
+    }).join('');
+
+    var maxN = Math.max.apply(null, buckets.map(function (b) { return b.n; }).concat([1]));
+    $('hist').innerHTML = buckets.map(function (b) {
+      var h = Math.round(b.n / maxN * 82);
+      return '<div class="bar-wrap"><div class="b-num">' + (b.n || '') + '</div>' +
+        '<div class="bar' + (b.n ? '' : ' zero') + '" style="height:' + Math.max(h, 3) + 'px"></div>' +
+        '<div class="b-label">' + Math.round(b.lo) + '-' + Math.round(b.hi) + '</div></div>';
+    }).join('');
+
+    $('rankCount').textContent = vals.length ? vals.length + ' 人已录入' : '';
+    if (!students.length) {
+      $('rankList').innerHTML = '<div class="empty"><div class="ico">📋</div><p>班级还没有成员</p><p style="font-size:13px">去「成员管理」添加同学，或让同学凭班级码加入</p></div>';
+    } else {
+      $('rankList').innerHTML = students.map(function (s, i) {
+        var cls = s.score == null ? '' : (s.score >= pass ? 'pass' : 'fail');
+        var isTop = s.score != null && i < 3 && (i === 0 || students[i - 1].score != null && students[i - 1].score > s.score);
+        return '<div class="score-row" data-mid="' + s.id + '">' +
+          '<span class="rank' + (isTop ? ' top' : '') + '">' + (s.score == null ? '—' : (i + 1)) + '</span>' +
+          '<span class="info"><span class="nm">' + esc(s.name) + '</span>' +
+          (s.no ? '<span class="no"> · ' + esc(s.no) + '</span>' : '') +
+          (s.role === 'admin' ? '<span class="tag">班长</span>' : (s.bound ? '' : '<span class="tag">未加入</span>')) + '</span>' +
+          '<input class="sc-input" type="number" inputmode="decimal" step="0.5" data-score-for="' + s.id + '" value="' + (s.score == null ? '' : s.score) + '" placeholder="—' + '" />' +
+          '</div>';
+      }).join('');
+      Array.prototype.forEach.call($('rankList').querySelectorAll('[data-score-for]'), function (inp) {
+        inp.addEventListener('change', function () {
+          var mid = parseInt(inp.getAttribute('data-score-for'), 10);
+          var v = num(inp.value);
+          if (v != null && (v < 0 || v > full)) { toast('分数需在 0 - ' + full + ' 之间', 'err'); inp.value = ''; return; }
+          saveScore(mid, v);
+        });
+      });
+    }
+
+    // 单个录入下拉
+    var sel = $('stuName');
+    sel.innerHTML = students.map(function (s) {
+      return '<option value="' + s.id + '">' + esc(s.name) + (s.no ? '（' + esc(s.no) + '）' : '') + '</option>';
+    }).join('');
+    if (!students.length) sel.innerHTML = '<option value="">班级暂无成员</option>';
+  }
+
+  function loadStudentExam() {
+    var examId = state.currentExam.id;
+    return cloud.database.from('scores').select('*').eq('exam_id', examId).eq('member_id', state.active.my_member_id)
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var mine = (r.data || [])[0];
+        var val = mine && mine.score != null ? parseFloat(mine.score) : null;
+        $('myScore').value = val == null ? '' : val;
+        var full = parseFloat(state.currentExam.full_score) || 100;
+        var pass = parseFloat(state.currentExam.pass_score) || 60;
+        $('myScoreTip').innerHTML =
+          (val == null ? '尚未填写' : '当前已填：<b>' + val + '</b> 分') +
+          ' · 满分 ' + full + ' · 及格线 ' + pass;
+        return loadStudentHistory();
+      })
+      .catch(function (e) {
+        $('myScoreTip').innerHTML = '<span style="color:var(--danger)">' + esc(errText(e)) + '</span>';
+      });
+  }
+
+  // 学生端历史：RLS 保证只能读到自己的成绩行
+  function loadStudentHistory() {
+    var mid = state.active.my_member_id;
+    return cloud.database.from('scores').select('*').eq('member_id', mid)
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var rows = r.data || [];
+        var byExam = {};
+        rows.forEach(function (s) { byExam[s.exam_id] = s; });
+        var list = state.exams.map(function (e) {
+          var sc = byExam[e.id];
+          var v = sc && sc.score != null ? parseFloat(sc.score) : null;
+          var pass = parseFloat(e.pass_score) || 60;
+          return { name: e.name, date: e.exam_date, subject: e.subject, v: v, pass: pass };
+        });
+        if (!list.length) {
+          $('myScoreHistory').innerHTML = '<div style="font-size:13px;color:var(--muted)">暂无记录</div>';
+          return;
+        }
+        $('myScoreHistory').innerHTML = list.map(function (it) {
+          var cls = it.v == null ? '' : (it.v >= it.pass ? 'color:var(--ok)' : 'color:var(--danger)');
+          return '<div class="score-row" style="padding:10px 0;box-shadow:none;border-bottom:1px solid var(--line);border-radius:0">' +
+            '<span class="info"><span class="nm" style="font-size:14px">' + esc(it.name) + '</span>' +
+            '<span class="no"> · ' + esc(it.date || '未定日期') + (it.subject ? ' · ' + esc(it.subject) : '') + '</span></span>' +
+            '<span class="sc ' + (it.v != null && it.v >= it.pass ? 'pass' : 'fail') + '" style="font-size:16px;' + cls + '">' +
+            (it.v == null ? '未填' : it.v) + '</span></div>';
+        }).join('');
+      })
+      .catch(function (e) {
+        $('myScoreHistory').innerHTML = '<div style="font-size:13px;color:var(--danger)">' + esc(errText(e)) + '</div>';
+      });
+  }
+
+  // ============ 写入成绩 ============
+  function saveScore(memberId, score) {
+    var exam = state.currentExam;
+    return rpc('fn_set_score', {
+      p_exam_id: exam.id,
+      p_class_id: exam.class_id,
+      p_member_id: memberId,
+      p_score: score
+    }).then(function () {
+      toast('已保存');
+      return loadAdminExam();
+    }).catch(function (e) {
+      toast(errText(e), 'err');
+    });
+  }
+
+  function saveMyScore() {
+    var exam = state.currentExam;
+    var v = num($('myScore').value);
+    var full = parseFloat(exam.full_score) || 100;
+    if (v == null) { toast('请输入有效分数', 'err'); return; }
+    if (v < 0 || v > full) { toast('分数需在 0 - ' + full + ' 之间', 'err'); return; }
+    var btn = $('myScoreBtn');
+    btn.disabled = true;
+    rpc('fn_set_score', {
+      p_exam_id: exam.id,
+      p_class_id: exam.class_id,
+      p_member_id: state.active.my_member_id,
+      p_score: v
+    }).then(function () {
+      toast('已保存我的成绩');
+      return loadStudentExam();
+    }).catch(function (e) {
+      toast(errText(e), 'err');
+    }).then(function () { btn.disabled = false; });
+  }
+
+  function addSingleScore() {
+    var mid = parseInt($('stuName').value, 10);
+    if (!mid) { toast('请先选择同学', 'err'); return; }
+    var v = num($('stuScore').value);
+    if (v == null) { toast('请输入有效分数', 'err'); return; }
+    var btn = $('addStudentBtn');
+    btn.disabled = true;
+    saveScore(mid, v).then(function () {
+      $('stuScore').value = '';
+    }).then(function () { btn.disabled = false; });
+  }
+
+  function batchImport() {
+    var text = $('batchText').value.trim();
+    if (!text) { toast('请粘贴成绩数据', 'err'); return; }
+    var full = parseFloat(state.currentExam.full_score) || 100;
+    var byName = {};
+    state.members.forEach(function (m) { if (m.name) byName[String(m.name).trim()] = m; });
+
+    var rows = [], bad = [];
+    text.split(/\r?\n/).forEach(function (line) {
+      var t = line.trim();
+      if (!t) return;
+      var parts = t.split(/[,，\t\s]+/).filter(function (x) { return x !== ''; });
+      if (parts.length < 2) { bad.push(t); return; }
+      var name, no, scoreText;
+      if (parts.length >= 3) {
+        name = parts[0]; no = parts[1]; scoreText = parts[2];
+        if (num(parts[1]) != null && num(parts[2]) == null) { scoreText = parts[1]; no = parts[2]; }
+      } else {
+        name = parts[0]; scoreText = parts[1];
+      }
+      var sc = num(scoreText);
+      var mem = byName[String(name).trim()];
+      if (!mem || sc == null || sc < 0 || sc > full) { bad.push(t); return; }
+      rows.push({ memberId: mem.id, score: sc });
+    });
+    if (!rows.length) { toast('没有解析到有效数据（姓名需与名册一致）', 'err'); return; }
+
+    var btn = $('batchImportBtn');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+    var chain = Promise.resolve();
+    rows.forEach(function (r) {
+      chain = chain.then(function () {
+        return rpc('fn_set_score', {
+          p_exam_id: state.currentExam.id,
+          p_class_id: state.currentExam.class_id,
+          p_member_id: r.memberId,
+          p_score: r.score
+        });
+      });
+    });
+    chain.then(function () {
+      $('batchText').value = '';
+      toast('成功导入 ' + rows.length + ' 条' + (bad.length ? '，' + bad.length + ' 行被跳过' : ''));
+      return loadAdminExam();
+    }).catch(function (e) {
+      toast(errText(e), 'err');
+    }).then(function () { btn.disabled = false; btn.textContent = '批量导入'; });
+  }
+
+  // ============ 考试表单弹层 ============
+  function openExamSheet(exam) {
+    var isEdit = !!exam;
+    var e = exam || { name: '', subject: '', exam_date: '', full_score: 100, pass_score: 60, note: '' };
+    var today = new Date();
+    var p = function (n) { return String(n).padStart(2, '0'); };
+    var todayStr = today.getFullYear() + '-' + p(today.getMonth() + 1) + '-' + p(today.getDate());
+
+    $('sheet').innerHTML =
+      '<h3>' + (isEdit ? '编辑考试' : '新建考试') + '</h3>' +
+      '<p class="sheet-sub">考试信息与及格线会影响统计结果</p>' +
+      '<div class="field"><label>考试名称 *</label><input id="fName" type="text" placeholder="如 期中考试" value="' + esc(e.name) + '" /></div>' +
+      '<div class="field"><label>科目</label><input id="fSubject" type="text" placeholder="如 数学" value="' + esc(e.subject || '') + '" /></div>' +
+      '<div class="field"><label>考试日期</label><input id="fDate" type="date" value="' + esc(e.exam_date || todayStr) + '" /></div>' +
+      '<div class="field"><label>满分</label><input id="fFull" type="number" inputmode="decimal" step="0.5" value="' + esc(e.full_score) + '" /></div>' +
+      '<div class="field"><label>及格线</label><input id="fPass" type="number" inputmode="decimal" step="0.5" value="' + esc(e.pass_score) + '" /></div>' +
+      '<div class="field"><label>备注</label><input id="fNote" type="text" placeholder="选填" value="' + esc(e.note || '') + '" /></div>' +
+      '<div class="sheet-actions">' +
+      '<button class="btn ghost" id="fCancel" type="button" style="margin-top:0">取消</button>' +
+      '<button class="btn" id="fSave" type="button">保存</button></div>';
+
+    $('mask').classList.remove('hidden');
+    $('fCancel').addEventListener('click', closeSheet);
+    $('fSave').addEventListener('click', function () {
+      var name = $('fName').value.trim();
+      var full = num($('fFull').value);
+      var pass = num($('fPass').value);
+      if (!name) { toast('请输入考试名称', 'err'); return; }
+      if (full == null || full <= 0) { toast('请输入有效的满分', 'err'); return; }
+      if (pass == null || pass < 0 || pass > full) { toast('及格线需在 0 - ' + full + ' 之间', 'err'); return; }
+      var payload = {
+        class_id: state.active.class_id,
+        name: name,
+        subject: $('fSubject').value.trim() || null,
+        exam_date: $('fDate').value || null,
+        full_score: full,
+        pass_score: pass,
+        note: $('fNote').value.trim() || null
+      };
+      var btn = $('fSave');
+      btn.disabled = true;
+      var p2;
+      if (isEdit) {
+        p2 = cloud.database.from('exams').update(payload).eq('id', e.id).select();
+      } else {
+        p2 = cloud.database.from('exams').insert(payload).select();
+      }
+      p2.then(function (r) {
+        if (r.error) throw r.error;
+        if (!r.data || !r.data.length) throw new Error('保存未生效，请检查网络或权限');
+        closeSheet();
+        toast(isEdit ? '已更新' : '已创建');
+        return loadExams();
+      }).catch(function (err) {
+        toast(errText(err), 'err');
+      }).then(function () { btn.disabled = false; });
+    });
+  }
+
+  function closeSheet() { $('mask').classList.add('hidden'); $('sheet').innerHTML = ''; }
+
+  function deleteExam() {
+    var ex = state.currentExam;
+    if (!ex) return;
+    if (!confirm('删除《' + ex.name + '》将同时删除其下所有成绩记录，确定吗？')) return;
+    cloud.database.from('scores').delete().eq('exam_id', ex.id)
+      .then(function () {
+        return cloud.database.from('exams').delete().eq('id', ex.id).select();
+      })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        if (!r.data || !r.data.length) throw new Error('删除未生效，可能无权操作');
+        toast('已删除');
+        state.currentExam = null;
+        showPage('home');
+        return loadExams();
+      })
+      .catch(function (e) { toast(errText(e), 'err'); });
+  }
+
+  // ============ 班级相关弹层 ============
+  function openCreateClassSheet() {
+    $('sheet').innerHTML =
+      '<h3>创建班级</h3>' +
+      '<p class="sheet-sub">创建后会自动生成 6 位班级码，发给同学即可加入</p>' +
+      '<div class="field"><label>班级名称 *</label><input id="cName" type="text" placeholder="如 高一(3)班" /></div>' +
+      '<div class="field"><label>你的姓名</label><input id="cAdmin" type="text" value="' + esc((state.profile && state.profile.display_name) || '') + '" /></div>' +
+      '<div class="sheet-actions">' +
+      '<button class="btn ghost" id="cCancel" type="button" style="margin-top:0">取消</button>' +
+      '<button class="btn" id="cSave" type="button">创建</button></div>';
+    $('mask').classList.remove('hidden');
+    $('cCancel').addEventListener('click', closeSheet);
+    $('cSave').addEventListener('click', function () {
+      var name = $('cName').value.trim();
+      var admin = $('cAdmin').value.trim();
+      if (!name) { toast('请输入班级名称', 'err'); return; }
+      var btn = $('cSave');
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+      rpc('fn_create_class', { p_name: name, p_admin_name: admin })
+        .then(function (res) {
+          closeSheet();
+          toast('班级已创建，班级码 ' + res.join_code);
+          return loadMemberships();
+        })
+        .catch(function (e) { toast(errText(e), 'err'); })
+        .then(function () { btn.disabled = false; btn.innerHTML = '创建'; });
+    });
+  }
+
+  function openJoinSheet(firstTime) {
+    $('sheet').innerHTML =
+      '<h3>加入班级</h3>' +
+      '<p class="sheet-sub">向班长获取 6 位班级码，姓名需与名册一致以便自动匹配</p>' +
+      '<div class="field"><label>班级码 *</label><input id="jCode" type="text" maxlength="8" placeholder="如 A1B2C3" style="text-transform:uppercase" /></div>' +
+      '<div class="field"><label>你的姓名 *</label><input id="jName" type="text" value="' + esc((state.profile && state.profile.display_name) || '') + '" /></div>' +
+      '<div class="field"><label>学号（选填）</label><input id="jNo" type="text" placeholder="如 2026001" /></div>' +
+      '<div class="sheet-actions">' +
+      '<button class="btn ghost" id="jCancel" type="button" style="margin-top:0">取消</button>' +
+      '<button class="btn" id="jSave" type="button">加入</button></div>';
+    $('mask').classList.remove('hidden');
+    $('jCancel').addEventListener('click', function () {
+      closeSheet();
+      if (firstTime) renderHome();
+    });
+    $('jSave').addEventListener('click', function () {
+      var code = $('jCode').value.trim();
+      var name = $('jName').value.trim();
+      var no = $('jNo').value.trim();
+      if (!code) { toast('请输入班级码', 'err'); return; }
+      if (!name) { toast('请输入你的姓名', 'err'); return; }
+      var btn = $('jSave');
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+      rpc('fn_join_class', { p_code: code, p_name: name, p_no: no || null })
+        .then(function (res) {
+          closeSheet();
+          toast(res.joined ? '已加入班级' : '你已在该班级中');
+          return loadMemberships();
+        })
+        .catch(function (e) { toast(errText(e), 'err'); })
+        .then(function () { btn.disabled = false; btn.innerHTML = '加入'; });
+    });
+  }
+
+  function openSwitchRoleSheet() {
+    var cur = state.profile && state.profile.role === 'admin' ? 'admin' : 'student';
+    $('sheet').innerHTML =
+      '<h3>切换身份</h3>' +
+      '<p class="sheet-sub">切换后需要重新选择班级；已在班级的权限不受影响</p>' +
+      '<div class="seg" id="srSeg">' +
+      '<button type="button" data-r="student" class="' + (cur === 'student' ? 'active' : '') + '">学生</button>' +
+      '<button type="button" data-r="admin" class="' + (cur === 'admin' ? 'active' : '') + '">班长管理员</button></div>' +
+      '<div class="field"><label>你的姓名</label><input id="srName" type="text" value="' + esc((state.profile && state.profile.display_name) || '') + '" /></div>' +
+      '<div class="sheet-actions">' +
+      '<button class="btn ghost" id="srCancel" type="button" style="margin-top:0">取消</button>' +
+      '<button class="btn" id="srSave" type="button">确定</button></div>';
+    $('mask').classList.remove('hidden');
+    var picked = cur;
+    Array.prototype.forEach.call($('srSeg').querySelectorAll('[data-r]'), function (b) {
+      b.addEventListener('click', function () {
+        picked = b.getAttribute('data-r');
+        Array.prototype.forEach.call($('srSeg').querySelectorAll('button'), function (x) { x.classList.remove('active'); });
+        b.classList.add('active');
+      });
+    });
+    $('srCancel').addEventListener('click', closeSheet);
+    $('srSave').addEventListener('click', function () {
+      var btn = $('srSave');
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+      rpc('fn_set_role', { p_role: picked, p_display_name: $('srName').value.trim() })
+        .then(function (p) {
+          state.profile = p;
+          closeSheet();
+          toast('身份已切换');
+          return loadMemberships();
+        })
+        .catch(function (e) { toast(errText(e), 'err'); })
+        .then(function () { btn.disabled = false; btn.innerHTML = '确定'; });
+    });
+  }
+
+  // ============ 成员管理 ============
+  function openMemberPage() {
+    if (!isAdmin()) { toast('只有班长可以管理成员', 'err'); return; }
+    showPage('member');
+    $('memberMeta').textContent = state.active.class_name;
+    $('memberList').innerHTML = '<div class="loading-wrap">加载中…</div>';
+    cloud.database.from('class_members').select('*').eq('class_id', state.active.class_id).order('id')
+      .then(function (r) {
+        if (r.error) throw r.error;
+        state.members = r.data || [];
+        renderMembers();
+      })
+      .catch(function (e) {
+        $('memberList').innerHTML = '<div class="empty"><div class="ico">⚠️</div><p>' + esc(errText(e)) + '</p></div>';
+      });
+  }
+
+  function renderMembers() {
+    var box = $('memberList');
+    if (!state.members.length) {
+      box.innerHTML = '<div class="empty"><div class="ico">👥</div><p>还没有同学</p><p style="font-size:13px">点下方按钮添加，或让同学凭班级码加入</p></div>';
+      return;
+    }
+    box.innerHTML = state.members.map(function (m) {
+      return '<div class="score-row" data-mid="' + m.id + '">' +
+        '<span class="info"><span class="nm">' + esc(m.name || '未命名') + '</span>' +
+        (m.student_no ? '<span class="no"> · ' + esc(m.student_no) + '</span>' : '') +
+        (m.role === 'admin' ? '<span class="tag">班长</span>' : (m.user_id ? '<span class="tag">已加入</span>' : '<span class="tag">未加入</span>')) +
+        '</span>' +
+        (m.role === 'admin' ? '' : '<button class="del" type="button" data-del="' + m.id + '">✕</button>') +
+        '</div>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('[data-del]'), function (btn) {
+      btn.addEventListener('click', function () {
+        if (!confirm('确定移除这名同学？其成绩记录也会一并删除。')) return;
+        var mid = parseInt(btn.getAttribute('data-del'), 10);
+        cloud.database.from('scores').delete().eq('member_id', mid)
+          .then(function () { return cloud.database.from('class_members').delete().eq('id', mid).select(); })
+          .then(function (r) {
+            if (r.error) throw r.error;
+            toast('已移除');
+            return openMemberPage();
+          })
+          .catch(function (e) { toast(errText(e), 'err'); });
+      });
+    });
+  }
+
+  function openAddMemberSheet() {
+    $('sheet').innerHTML =
+      '<h3>添加同学</h3>' +
+      '<p class="sheet-sub">先登记名册，同学用班级码加入时会自动匹配到本人</p>' +
+      '<div class="field"><label>姓名 *</label><input id="mName" type="text" placeholder="学生姓名" /></div>' +
+      '<div class="field"><label>学号（选填）</label><input id="mNo" type="text" placeholder="如 2026001" /></div>' +
+      '<div class="sheet-actions">' +
+      '<button class="btn ghost" id="mCancel" type="button" style="margin-top:0">取消</button>' +
+      '<button class="btn" id="mSave" type="button">添加</button></div>';
+    $('mask').classList.remove('hidden');
+    $('mCancel').addEventListener('click', closeSheet);
+    $('mSave').addEventListener('click', function () {
+      var name = $('mName').value.trim();
+      var no = $('mNo').value.trim();
+      if (!name) { toast('请输入姓名', 'err'); return; }
+      var btn = $('mSave');
+      btn.disabled = true;
+      cloud.database.from('class_members').insert({
+        class_id: state.active.class_id,
+        name: name,
+        student_no: no || null,
+        role: 'student',
+        user_id: null
+      }).select()
+        .then(function (r) {
+          if (r.error) throw r.error;
+          closeSheet();
+          toast('已添加');
+          return openMemberPage();
+        })
+        .catch(function (e) { toast(errText(e), 'err'); })
+        .then(function () { btn.disabled = false; });
+    });
+  }
+
+  // ============ 设置页 ============
+  function openSettingPage() {
+    showPage('setting');
+    var admin = isAdmin();
+    $('settingMeta').textContent = state.active ? state.active.class_name : '尚未加入班级';
+    $('myRoleText').textContent = state.profile && state.profile.role === 'admin'
+      ? '当前身份：班长管理员 —— 可创建班级、查看和修改全班所有同学的成绩。'
+      : '当前身份：学生 —— 只能填写和查看自己的成绩。';
+    $('switchRoleBtn').textContent = state.profile && state.profile.role === 'admin' ? '切换为学生' : '切换为班长';
+    $('adminClassCard').classList.toggle('hidden', !admin);
+    $('leaveClassBtn').classList.toggle('hidden', !state.active);
+    $('createClassBtn').classList.toggle('hidden', !(state.profile && state.profile.role === 'admin'));
+    if (admin) $('settingCode').textContent = state.active.join_code || '—';
+  }
+
+  function leaveClass() {
+    if (!state.active) { toast('当前没有班级', 'err'); return; }
+    if (!confirm('确定退出「' + state.active.class_name + '」？退出后将无法填写本班成绩。')) return;
+    var btn = $('leaveClassBtn');
+    btn.disabled = true;
+    rpc('fn_leave_class', { p_class_id: state.active.class_id })
+      .then(function () {
+        state.active = null;
+        toast('已退出班级');
+        return loadMemberships();
+      })
+      .catch(function (e) { toast(errText(e), 'err'); })
+      .then(function () { btn.disabled = false; });
+  }
+
+  function deleteClass() {
+    if (!state.active) return;
+    if (!confirm('删除班级「' + state.active.class_name + '」将同时删除全部考试与成绩，且不可恢复，确定吗？')) return;
+    cloud.database.from('classes').delete().eq('id', state.active.class_id).select()
+      .then(function (r) {
+        if (r.error) throw r.error;
+        if (!r.data || !r.data.length) throw new Error('删除未生效，可能无权操作');
+        state.active = null;
+        toast('班级已删除');
+        return loadMemberships();
+      })
+      .catch(function (e) { toast(errText(e), 'err'); });
+  }
+
+  function switchRole() {
+    var next = state.profile && state.profile.role === 'admin' ? 'student' : 'admin';
+    rpc('fn_set_role', { p_role: next, p_display_name: (state.profile && state.profile.display_name) || '' })
+      .then(function (p) {
+        state.profile = p;
+        toast('身份已切换为' + (next === 'admin' ? '班长管理员' : '学生'));
+        return loadMemberships();
+      })
+      .catch(function (e) { toast(errText(e), 'err'); });
+  }
+
+  // ============ 事件绑定 ============
+  $('tabPhone').addEventListener('click', function () { switchTab('phone'); });
+  $('tabEmail').addEventListener('click', function () { switchTab('email'); });
+  $('codeBtn').addEventListener('click', sendCode);
+  $('loginBtn').addEventListener('click', submitLogin);
+  $('pwdEntry').addEventListener('click', showPasswordLogin);
+  $('otpEntry').addEventListener('click', showOtpLogin);
+  $('pwdLoginBtn').addEventListener('click', submitPasswordLogin);
+  $('wxBtn').addEventListener('click', function () { startOAuth('wechat', 'wxBtn'); });
+  $('wbBtn').addEventListener('click', function () { startOAuth('workbuddy', 'wbBtn'); });
+
+  $('roleStudentCard').addEventListener('click', function () {
+    state.pendingRole = 'student';
+    $('roleStudentCard').classList.add('sel');
+    $('roleAdminCard').classList.remove('sel');
+  });
+  $('roleAdminCard').addEventListener('click', function () {
+    state.pendingRole = 'admin';
+    $('roleAdminCard').classList.add('sel');
+    $('roleStudentCard').classList.remove('sel');
+  });
+  $('roleConfirmBtn').addEventListener('click', confirmRole);
+
+  $('logoutBtn').addEventListener('click', function () {
+    cloud.auth.signOut().then(function () {
+      resetState();
+      $('appView').classList.add('hidden');
+      $('loginView').classList.remove('hidden');
+      showLoginMsg('已退出登录');
+      notifyHost('logout', '');
+    }).catch(function () {
+      resetState();
+      $('appView').classList.add('hidden');
+      $('loginView').classList.remove('hidden');
+      notifyHost('logout', '');
+    });
+  });
+
+  function resetState() {
+    state.user = null; state.profile = null; state.memberships = [];
+    state.active = null; state.exams = []; state.members = [];
+    state.examScores = []; state.currentExam = null;
+  }
+
+  $('fabBtn').addEventListener('click', function () { openExamSheet(null); });
+  $('backBtn').addEventListener('click', function () { showPage('home'); });
+  $('memberBackBtn').addEventListener('click', function () { showPage('home'); });
+  $('settingBackBtn').addEventListener('click', function () { showPage('home'); });
+  $('editExamBtn').addEventListener('click', function () { openExamSheet(state.currentExam); });
+  $('delExamBtn').addEventListener('click', deleteExam);
+
+  $('modeSingle').addEventListener('click', function () {
+    state.importMode = 'single';
+    $('modeSingle').classList.add('active'); $('modeBatch').classList.remove('active');
+    $('singlePane').classList.remove('hidden'); $('batchPane').classList.add('hidden');
+  });
+  $('modeBatch').addEventListener('click', function () {
+    state.importMode = 'batch';
+    $('modeBatch').classList.add('active'); $('modeSingle').classList.remove('active');
+    $('batchPane').classList.remove('hidden'); $('singlePane').classList.add('hidden');
+  });
+  $('addStudentBtn').addEventListener('click', addSingleScore);
+  $('batchImportBtn').addEventListener('click', batchImport);
+  $('myScoreBtn').addEventListener('click', saveMyScore);
+
+  $('addMemberBtn').addEventListener('click', openAddMemberSheet);
+  $('createClassBtn').addEventListener('click', openCreateClassSheet);
+  $('joinClassBtn').addEventListener('click', function () { openJoinSheet(false); });
+  $('leaveClassBtn').addEventListener('click', leaveClass);
+  $('deleteClassBtn').addEventListener('click', deleteClass);
+  $('switchRoleBtn').addEventListener('click', switchRole);
+  $('copyCodeBtn').addEventListener('click', function () {
+    var code = state.active && state.active.join_code;
+    if (!code) { toast('暂无班级码', 'err'); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).then(function () { toast('班级码已复制'); })
+        .catch(function () { toast('复制失败，请手动记录 ' + code, 'err'); });
+    } else {
+      toast('班级码：' + code);
+    }
+  });
+
+  $('mask').addEventListener('click', function (e) { if (e.target === $('mask')) closeSheet(); });
+
+  // ── 键盘弹出后，把弹窗里的操作按钮滚回可视区（2026-10-29）──────────────
+  //
+  // 现象：弹窗里点输入框 → 键盘弹起 → 宿主把 WebView 收缩 → 弹窗只剩上半截，
+  // 底下「取消 / 创建」被挤出可视区，用户反馈"点不到"。
+  // 浏览器的自动滚动只保证**焦点元素本身**露出来，不管它下面的按钮；
+  // 试过 `scroll-padding-bottom`（CSS），触摸聚焦这条路径不认。
+  // 所以在 focusin 之后自己补差额：只补"操作行底部超出可视区"的那一段。
+  document.addEventListener('focusin', function (e) {
+    var el = e.target;
+    if (!el || !el.tagName || !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+    var sheet = el.closest ? el.closest('.sheet') : null;
+    if (!sheet) return;
+    // 键盘弹起 + 宿主 inset 派发要一小段时间，等落定再量，否则量到的是旧高度。
+    setTimeout(function () {
+      var row = sheet.querySelector('.sheet-actions') || sheet.lastElementChild;
+      if (!row) return;
+      var box = sheet.getBoundingClientRect();
+      var deficit = row.getBoundingClientRect().bottom - (box.bottom - 12);
+      if (deficit > 0) sheet.scrollTop += deficit;
+    }, 320);
+  });
+
+  // ============ 启动 ============
+  /** 撤掉启动过渡层。**所有** bootstrap 出口都要走到它，否则页面会一直停在"恢复登录中"。 */
+  function finishBoot() {
+    var boot = $('bootView');
+    if (boot) boot.classList.add('hidden');
+  }
+
+  function bootstrap() {
+    applyEmbeddedMode();
+    restoreAuth().then(function (handled) {
+      if (handled) {
+        // 授权回调分支（带 ?code= / ?error=）自己已经处理完：成功时 enterApp 已撤过渡层，
+        // 失败时只是 showLoginMsg —— 但 loginView 现在是初始隐藏的，不显式打开
+        // 那行红字就看不见，用户会一直盯着"正在恢复登录…"。
+        finishBoot();
+        if ($('appView').classList.contains('hidden') &&
+            $('roleView').classList.contains('hidden')) {
+          $('loginView').classList.remove('hidden');
+        }
+        return null;
+      }
+      return cloud.auth.getSession().then(function (r) {
+        // ── 登录态恢复的关键一步 ──────────────────────────────────
+        // SDK 的会话存在 localStorage（键 workbuddy-cloud.session.<publishableKey>），
+        // getSession() 会把它读回来并（必要时）用 refresh_token 续期。
+        // 因此"退出应用再打开"不需要重新登录 —— 前提是宿主用稳定 https origin 加载本页。
+        if (r.error) {
+          // 会话过期 / 无法刷新是**正常状态**（未登录），不该弹红色报错
+          if (r.error && r.error.kind !== 'unauthenticated') {
+            showLoginMsg(r.error.message || '', 'err');
+          }
+          finishBoot();
+          $('loginView').classList.remove('hidden');
+          return;
+        }
+        if (r.data && r.data.user) {
+          enterApp(r.data.user);
+          return;
+        }
+        finishBoot();
+        $('loginView').classList.remove('hidden');
+      });
+    }).catch(function (e) {
+      finishBoot();
+      $('loginView').classList.remove('hidden');
+      showLoginMsg((e && e.message) || '初始化失败，请刷新重试', 'err');
+    }).then(function () {
+      // 兜底：正常路径都已在上面撤过，这里再调一次是无害的幂等操作；
+      // 但"三个视图全隐藏"意味着某条分支漏了收尾 —— 与其把过渡层撤掉露出白屏，
+      // 不如落到登录页（用户至少能做点什么）。
+      if ($('appView').classList.contains('hidden') &&
+          $('roleView').classList.contains('hidden') &&
+          $('loginView').classList.contains('hidden')) {
+        $('loginView').classList.remove('hidden');
+      }
+      finishBoot();
+      notifyHost('ready', '');
+    });
+  }
+
+  bootstrap();
+})();
+</script>
+</body>
+</html>

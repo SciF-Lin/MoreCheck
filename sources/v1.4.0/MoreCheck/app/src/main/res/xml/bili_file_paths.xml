@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    「我的下载」分享用的 FileProvider 路径（2026-11-03 B站增强新增）。
+
+    只映射下载产物所在的公共目录子路径，不暴露应用私有目录：
+    - 本应用下载的 B 站视频统一落在 `Movies/MoreCheck/`（见 BiliDownloader）；
+    - 分享时必须给接收方一个 content:// URI，targetSdk 36 下直接传 file:// 会抛
+      FileUriExposedException，所以必须经 FileProvider 授权。
+
+    ⚠️ 与已有的 `@xml/file_paths`（拍照临时文件）分开成两个文件：
+    一个 <provider> 只能挂一个 FILE_PROVIDER_PATHS meta-data，混用会把拍照 cacheDir
+    的暴露面一起带进来，不符合最小暴露原则。
+-->
+<paths>
+    <external-path
+        name="bili_movies"
+        path="Movies/MoreCheck/" />
+</paths>

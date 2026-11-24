@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>知识问答 Agent · 依据可核验</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"><span class="ring"></span><span class="core"></span></div>
+        <div class="brand-text">
+          <h1>知识问答 Agent</h1>
+          <p>只依据知识库作答 · 每条回答可定位原文</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div class="kb-stat" title="云端知识库规模">
+          <span class="stat-dot" aria-hidden="true"></span>
+          <span>知识库</span>
+          <b id="statDocs">—</b><span>篇文档</span>
+          <i>/</i>
+          <b id="statChunks">—</b><span>片段</span>
+        </div>
+        <label class="model-picker">
+          <span>模型</span>
+          <select id="modelSelect" aria-label="选择大模型"></select>
+        </label>
+        <button type="button" class="icon-btn" id="btnToggleKb" aria-label="展开知识库面板">
+          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M3 4.5h14M3 10h14M3 15.5h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar" id="sidebar">
+        <div class="side-section">
+          <div class="side-title">
+            <span>知识库</span>
+            <span class="side-badge" id="sideBadge">示例文档</span>
+          </div>
+          <p class="side-desc">回答只使用下列文档中被检索到的片段。点击文档可查看完整原文。</p>
+          <div class="doc-list" id="docList"></div>
+          <button type="button" class="btn-ghost full" id="btnAddDoc">
+            <span class="plus" aria-hidden="true"></span> 添加文档到知识库
+          </button>
+        </div>
+
+        <div class="side-section policy">
+          <div class="side-title"><span>回答规则</span></div>
+          <ul class="rule-list">
+            <li><span class="rule-num">1</span><div><b>先检索，后作答</b><p>没有检索到依据时不会调用大模型，直接说明未查到。</p></div></li>
+            <li><span class="rule-num">2</span><div><b>逐句标注依据</b><p>答案中的圆形编号对应下方片段，可点击查看原文。</p></div></li>
+            <li><span class="rule-num">3</span><div><b>无引用不展示</b><p>模型输出若没有合法引用编号，会被拦截而不呈现给用户。</p></div></li>
+          </ul>
+          <label class="topk-row">
+            <span>每次检索片段数</span>
+            <select id="topKSelect" aria-label="每次检索片段数">
+              <option value="3">3 条</option>
+              <option value="5" selected>5 条</option>
+              <option value="8">8 条</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="side-foot" id="bootStatus">正在连接云端知识库…</div>
+      </aside>
+
+      <section class="chat-panel">
+        <div class="chat-scroll" id="chatScroll">
+          <div class="welcome" id="welcome">
+            <div class="welcome-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+            <h2>问知识库里有的事</h2>
+            <p>我会先检索片段，再让大模型只依据这些片段作答。每条结论都带引用编号，可定位到原文字符位置；查不到就直接告诉你没查到。</p>
+            <div class="sample-label">试试这些问题</div>
+            <div class="samples" id="samples"></div>
+          </div>
+        </div>
+
+        <div class="composer-wrap">
+          <div class="global-alert" id="globalAlert" hidden></div>
+          <form class="composer" id="composer">
+            <textarea id="question" rows="1" placeholder="输入问题，例如：访客可以删除文档吗？" autocomplete="off"></textarea>
+            <button type="button" class="btn-stop" id="btnStop" hidden>停止</button>
+            <button type="submit" class="btn-send" id="btnSend">
+              <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M3 10h12M10 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              发送
+            </button>
+          </form>
+          <div class="composer-hint">检索不到依据时直接说明「未查到」，不会凭模型记忆作答</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 原文抽屉 -->
+  <div class="overlay" id="sourceOverlay" hidden></div>
+  <section class="source-drawer" id="sourceDrawer" hidden aria-label="文档原文">
+    <div class="drawer-head">
+      <div>
+        <div class="drawer-kicker">原文定位</div>
+        <h3 id="sourceTitle">—</h3>
+        <p id="sourceMeta">—</p>
+      </div>
+      <button type="button" class="close-btn" id="btnCloseSource" aria-label="关闭">
+        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="source-body" id="sourceBody"></div>
+  </section>
+
+  <!-- 添加文档 -->
+  <div class="overlay" id="docOverlay" hidden></div>
+  <section class="doc-modal" id="docModal" hidden aria-label="添加文档">
+    <div class="modal-head">
+      <div><div class="drawer-kicker">知识库</div><h3>添加文档</h3></div>
+      <button type="button" class="close-btn" id="btnCloseDoc" aria-label="关闭">
+        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <p class="modal-desc">正文会按段落自动切片，并记录每个片段在原文中的字符位置。用 <code>## 小节标题</code> 分段效果更好。</p>
+    <form id="docForm">
+      <label>文档标题<input id="docTitle" required maxlength="80" placeholder="例如：部署手册 - 支付网关 - v2.1"></label>
+      <div class="form-row">
+        <label>分类<input id="docCategory" maxlength="30" placeholder="例如：技术方案"></label>
+        <label>来源备注<input id="docSource" maxlength="60" placeholder="例如：内部制度 2025"></label>
+      </div>
+      <label>正文<textarea id="docContent" required rows="9" placeholder="## 第一节&#10;这里是正文内容……"></textarea></label>
+      <div class="modal-actions">
+        <span id="docFormMsg"></span>
+        <button type="submit" class="btn-send" id="btnSaveDoc">写入知识库</button>
+      </div>
+    </form>
+  </section>
+
+  <script src="config.js"></script>
+  <script src="engine.js"></script>
+  <script src="seed-docs.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

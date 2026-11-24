@@ -1,6 +1,7 @@
 # 构建产物与本地配置
 **/build/
 **/.gradle/
+**/.kotlin/
 **/local.properties
 **/.idea/
 *.iml
@@ -14,17 +15,25 @@ keystore.properties
 # 不属于公开交付物的本地文件
 .wbapp_*.genie
 .workbuddy/
+/.bili-migration-backup/
 /original-apks/
+# 柔和版更新日志只作为本地草稿，不发布到公开仓库或 Release
+/docs/release-notes/*-soft.md
 /scripts/rebrand.py
 sources/*/README.md
 sources/*/HANDOVER.md
 sources/*/dist/
 sources/*/MoreCheck/README.md
 
-# 上游 CheckInMate 原样快照：私有项目的源码，含其 .git 与 checkinmate.jks。
-# 仅本机参考，绝不随公开仓库分发（要出新版请按 HANDOVER 7.1 导出干净目录）。
+# 上游快照仅本机参考；1.4.0 已完成品牌改造，只发布干净的 MoreCheck/ 工程。
 /sources/v1.2.0/
-/sources/v1.4.0/
+/sources/v1.4.0/debug/
+/sources/v1.4.0/dist/
+/sources/v1.4.0/docs/
+/sources/v1.4.0/integration/
+/sources/v1.4.0/scripts/
+/sources/v1.4.0/web/
+/sources/v1.4.0/*.md
 
 .DS_Store
 Thumbs.db

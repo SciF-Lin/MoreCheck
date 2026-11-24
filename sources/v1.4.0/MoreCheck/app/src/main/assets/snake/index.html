@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html data-page-node-id="xhBA7EOBTTn0FQ3ndSD5fA" lang="zh-CN">
+<head data-page-node-id="spM8RrwCRgwW3XRmNj0ijY">
+  <!-- MoreCheck 云同步（v3）：把云端拉下来的游戏存档灌进 localStorage。
+       必须在本页自身脚本（body 末尾的 game.js）读取 localStorage 之前执行，
+       因此放在 <head> 最前面。没有待灌入快照时整段静默跳过。 -->
+  <script>
+  (function(){try{var b=window.__CIM_GAME__;if(!b)return;var p=b.pendingState();if(p){var d=JSON.parse(p);for(var k in d){try{localStorage.setItem(k,d[k]);}catch(e){}}b.markApplied();}}catch(e){}})();
+  </script>
+  <meta data-page-node-id="IjhDQECp7lDn0tVV89jSef" charset="UTF-8">
+  <meta data-page-node-id="pBWOUrQOiRhtX3LsFOdaQN" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport">
+  <meta data-page-node-id="lOZCaDkZOODAMa3PpuWDzg" content="#0d1220" name="theme-color">
+  <title data-page-node-id="PYTUTaYCnnOJ3CxFmmVjb3" data-pnid-children="Q17l6Vs0riSYeVDjiUBVQY">贪吃蛇 Snake</title>
+  <link data-page-node-id="1xa3Ho4K1jYQ6QX1HqNEcW" href="style.css" rel="stylesheet">
+</head>
+<body data-page-node-id="cD5fZKWPxI2VK2QMzxid6p">
+  <main data-page-node-id="uMVq17d7ZDD11kZO9E9BLP" class="app">
+    <header data-page-node-id="X91incuLeMyjr1I81BSzws" class="hud">
+      <div data-page-node-id="OIEVnwFlI5scyeTpLpCzks" class="brand">
+        <span data-page-node-id="wxHm5d3dyrIoYLJNianGJw" class="brand-title"><!--pnid:EXqyL3vBIItYdVJTe6UT1f-->贪吃蛇</span>
+        <span data-page-node-id="yXXLR1donlG4qny2t8UTz1" class="brand-sub" id="levelLabel"><!--pnid:thDoiTX4Olkd9EsRgjcapO-->普通</span>
+      </div>
+      <div data-page-node-id="J72nkjtOcrw4dhksBvzlJI" class="stats">
+        <div data-page-node-id="ICsgKfsp8FsNSPi8ThwYWq" class="stat">
+          <span data-page-node-id="xOvWdrVs71UpwE1TMjRxDR" class="stat-label"><!--pnid:YY1AaNeyNTlJl3MhFp5sWn-->得分</span>
+          <span data-page-node-id="hCooCGA5N2VXier648CC6p" class="stat-value" id="scoreValue"><!--pnid:eRknEUhcaFQAQtctx9Rr8Q-->0</span>
+        </div>
+        <div data-page-node-id="1CD93kHUejWeIiisEz5nNJ" class="stat">
+          <span data-page-node-id="JSYgkgjmSbzczTlKP7wMWy" class="stat-label"><!--pnid:qQ8AXGQAZM5tvOo13jVsyG-->最高分</span>
+          <span data-page-node-id="Qbtt8lKGGxvl5CDqEqvd2o" class="stat-value stat-value--muted" id="highScoreValue"><!--pnid:2EXQI05nF2uIXjmF1TbEhQ-->0</span>
+        </div>
+        <div data-page-node-id="2AuULbT1ieQcUFSP48mGNE" class="stat stat--pill">
+          <span data-page-node-id="FUXWV4WWYngbgxieTPLPoB" class="stat-value" id="statusValue"><!--pnid:MUmlju8S9z24E9MNmeEu1v-->准备开始</span>
+        </div>
+      </div>
+    </header>
+
+    <section data-page-node-id="DwdagBlCYgilkUdVg8yfwC" class="board-wrap">
+      <div data-page-node-id="VLzohngVQNqCMr4rj5i5NX" class="board" id="board">
+        <!-- 本轮需求 4：深浅色切换按钮。位置即用户标注的"图中位置"（棋盘右上角内沿）。 -->
+        <button aria-label="切换深浅色" class="theme-toggle" id="btnTheme" type="button">☀</button>
+        <canvas data-page-node-id="f6ipy5Pkyk0k7DyuAeQkGh" aria-label="贪吃蛇游戏棋盘" height="480" id="canvas" width="480"></canvas>
+
+        <!--pnid:pPp519DjBPN57Jd6qYXDRK--><!-- 开始 / 暂停 / 结束 三态共用的遮罩层 -->
+        <div data-page-node-id="YlDyfYVjpQmkhJnRt9mTFq" class="overlay is-visible" id="overlay">
+          <div data-page-node-id="vwW7cgFRj173A3evuW4zdk" class="overlay-card">
+            <svg data-page-node-id="w23J2fxUqWtp1vUVLjWSDT" aria-hidden="true" class="overlay-icon" viewBox="0 0 48 48">
+              <rect data-page-node-id="tezLYY6uBX3iSs0o96oaYr" fill="url(#ig)" height="44" opacity="0.18" rx="14" width="44" x="2" y="2"/>
+              <path data-page-node-id="Ec5jD76anWQqrsHtq9hwPc" d="M14 32c0-8 12-10 12-16s-8-6-8-2" fill="none" stroke="url(#ig)" stroke-linecap="round" stroke-width="4"/>
+              <circle data-page-node-id="2SqGhZq9Ar1TPdwJ5xmo7B" cx="30" cy="18" fill="url(#ig)" r="3"/>
+              <defs data-page-node-id="sOgPsROAZ9fTwJUFTm5ucB">
+                <linearGradient data-page-node-id="1jQm2b847DQ9QAIwl2M6SG" id="ig" x1="0" x2="1" y1="0" y2="1">
+                  <stop data-page-node-id="LVWxoDDsLOXwx1U7J4cskA" offset="0%" stop-color="#5ef2b0"/>
+                  <stop data-page-node-id="1xydsk9Zr19AKzDn5LEzHj" offset="100%" stop-color="#3ba9f5"/>
+                </linearGradient>
+              </defs>
+            </svg>
+            <h2 data-page-node-id="K3f7u7MfEhIZdNGdxHwxqw" class="overlay-title" id="overlayTitle"><!--pnid:TTQEwRqyfpKLx4Y1bNrx1M-->准备开始</h2>
+            <p data-page-node-id="vxGpTIR3dE57lFUBBzb2je" class="overlay-desc" id="overlayDesc"><!--pnid:yYs3w2pF8cCvHo35h35UW4-->使用 ↑ ↓ ← → 或 W A S D 控制方向</p>
+            <button data-page-node-id="qet7bIMVsKdzbRj4Wr0jwT" class="btn btn-primary" id="overlayBtn" type="button"><!--pnid:9BILVmkGiajnuCtQrsfoIl-->开始游戏</button>
+            <!-- 死亡后的 3 秒重开冷却进度条，仅在冷却期间显示 -->
+            <div class="cooldown" id="cooldown" hidden>
+              <span class="cooldown-bar" id="cooldownBar"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section data-page-node-id="bRdilywbJLvnAZPSwzpBum" class="controls">
+      <div data-page-node-id="RjfTRrg4xx42E1RSagTUXK" class="control-row">
+        <div data-page-node-id="3oNB2x0giGmRBuy7PXvSfk" aria-label="难度选择" class="segmented" id="levelGroup" role="group">
+          <button data-page-node-id="4hYPA51jq3XN87e8kqWzXp" class="seg-btn" data-level="easy" type="button"><!--pnid:eYNBQLF0tyt235bee4BgJl-->简单</button>
+          <button data-page-node-id="y5KuwtV3ShZgBqOL2UH3Z0" class="seg-btn is-active" data-level="normal" type="button"><!--pnid:LR0elif0SAGgONp3Spkeit-->普通</button>
+          <button data-page-node-id="3ESQue0LMgvsVH42XwxFFv" class="seg-btn" data-level="hard" type="button"><!--pnid:bNCWZawxFoNGeIz9UUwwEZ-->困难</button>
+        </div>
+        <div data-page-node-id="kvmtmbl720FB3edCsYf28G" class="action-group">
+          <button data-page-node-id="YVxOYSYiWgrWbs01teDe2v" class="btn btn-ghost" id="btnPause" type="button"><!--pnid:XtYPTSRxaZUBGQk5sKmFbG-->暂停</button>
+          <!-- 本轮需求 3：「重新开始」与「退出游戏」是同一位置的两态——
+               宿主隐藏了标题栏（没有返回键可点）时显示退出按钮、隐藏重新开始；
+               浏览器直接打开（无宿主）时只显示重新开始。game.js 的 syncUi 切换 hidden。
+               两者共用 .btn-ghost，尺寸与位置完全一致（需求要求"按钮大小不变且固定"）。 -->
+          <button data-page-node-id="DPHALPHFvW4B77MjY7txz5" class="btn btn-ghost" id="btnRestart" type="button"><!--pnid:bPa0sHRNWBoWORbTP55nmZ-->重新开始</button>
+          <button class="btn btn-ghost btn-exit" id="btnExit" hidden type="button">退出游戏</button>
+        </div>
+      </div>
+
+      <div data-page-node-id="yx7kUvCCdu9B7YhZGaO5mv" class="control-row control-row--center">
+        <div data-page-node-id="DkwlxTH99UHDhUVz01CO9V" aria-label="方向控制" class="dpad" id="dpad">
+          <button data-page-node-id="P7cilP6X7qgsrZQ7lHAtE2" aria-label="向上" class="dpad-btn dpad-btn--up" data-dir="up" type="button"><!--pnid:P6u93HBZSwgOXpcAyfFoh7-->▲</button>
+          <button data-page-node-id="V4BzwkKu3c2onDT3KDjzqZ" aria-label="向左" class="dpad-btn dpad-btn--left" data-dir="left" type="button"><!--pnid:0o1yLbhGlwANJs6c32hRwl-->◀</button>
+          <button data-page-node-id="cb4uvUgaVNGmc8ZALQqHPJ" aria-label="向右" class="dpad-btn dpad-btn--right" data-dir="right" type="button"><!--pnid:ASVb1stl6cVfnh9K55k9Go-->▶</button>
+          <button data-page-node-id="0BdKnoofkLlWoMBsFJy4zb" aria-label="向下" class="dpad-btn dpad-btn--down" data-dir="down" type="button"><!--pnid:Xs1isUwgMvVRVp6P6RSWq5-->▼</button>
+        </div>
+        <ul data-page-node-id="ehtThwnI7xgugKF88Fk4eP" class="hints">
+          <li data-page-node-id="YiIOiMUE4MRZ1EuggS9bxe"><kbd data-page-node-id="CLAIeuKfCO3DrzwDWdbpqm"><!--pnid:qs8t5XMybRKcbUYfhiEl1J-->↑</kbd><kbd data-page-node-id="GJwXLYuAKCCcI3nVaCRWRg"><!--pnid:Tj4F2KXUdcraJApXZoNrsJ-->↓</kbd><kbd data-page-node-id="5uBUB6jCNT9Jwed0n0tXuU"><!--pnid:avvigbSilc1LZzk3PqL3sL-->←</kbd><kbd data-page-node-id="Ul92ZnjQ4WpnBB0ruqi0jx"><!--pnid:VSPv1Wg2TOnyNxOcgy4ZwM-->→</kbd><!--pnid:9bvtUkIL4ALGyViGaS1uHD--> / <kbd data-page-node-id="1sRYii7wk1wKP7tmxRoatR"><!--pnid:88wAa9wY7OOTcvFGOO3EI4-->W</kbd><kbd data-page-node-id="DSBCGe6qwxxin5Kee6NCTd"><!--pnid:TGJsGiTFzKvAU3yoNTe0Mb-->A</kbd><kbd data-page-node-id="rmbHWncM1wWaN80IyP6yoJ"><!--pnid:t0ttQZumjU9rMuJxzaKa7W-->S</kbd><kbd data-page-node-id="a0QIZ9VJlkgBmH4IYMg3xQ"><!--pnid:G1QbPYMdqzOfcVahjWxvU3-->D</kbd><!--pnid:m7kec2d4zlpR9wvZ6ZLumH--> 控制方向</li>
+          <li data-page-node-id="yk3bsJfmWCJxDGuv05KPLs"><kbd data-page-node-id="kjndyQzq45XX84pmHUfaka"><!--pnid:pwJJP6Ss4K95Ir7ZRO21yK-->空格</kbd><!--pnid:fqkdbZcYnpg5OcNk2GF0e4--> 开始 / 暂停 · <kbd data-page-node-id="9TtIyTOCBBJRr7ckYLy48m"><!--pnid:REpd582TiNbIelR81Z3h7O-->R</kbd><!--pnid:qjcStIggidGlcobtRKJ0NM--> 重新开始</li>
+          <li data-page-node-id="KiHOhaCbZ5bcyqnAAvOndb"><!--pnid:hpeHID6inlFVwvDt3PU8Of-->移动端可在棋盘上滑动，或使用方向键按钮</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <script data-page-node-id="KkOAneJ1pd2AizDLaLeVbT" src="game.js"></script>
+</body>
+</html>

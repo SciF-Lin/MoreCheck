@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    「图标更改」内置图标之一：薄荷（复用「一个木函」Logo 家族素材，本轮需求 8/11）。
+
+    素材来源、裁切方式与授权口径与 `ic_launcher_pine.xml` 完全一致（同一批三张之一，
+    源文件 `E:\download\app\A_Tree\exported_images\icon_05_432x432.png`），不再重复。
+
+    ## 背景 `#0B1820`（近黑的深蓝灰）的取值依据（**量过前景才定的**）
+
+    本套前景是**薄荷绿的小树形**（平均 RGB 132,251,217、亮度 212，图形较小），
+    亮前景必须配深底。取 `#0B1820` 而不是复用任何既有色的理由：
+    - 薄荷绿是高饱和浅色，压在 Teal 900（`#004D40`，绿系）上会与"同色系"的
+      snow/tree 两套在桌面上互相混淆；压在近黑的中性深底上才是独立的第三种观感
+      （对比度实测 **12.8 : 1**，是十二套里最高的一档）；
+    - `#0B1820` 取自贪吃蛇页面背景家族（`#080B14` 的近邻），与本项目"游戏/深色"的
+      既有用色口径一致，不是凭空拍的色值。
+
+    ## 与 tree 套的图形差异（为什么两套都存在）
+
+    mint 的树形是**小冠幅的疏枝树**（内容只有 13274 个不透明像素，tree 是它的两倍以上），
+    与 tree 的密枝树形轮廓明显不同，加上底色一浅一深，桌面上不会认错。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_mint_background" />
+    <foreground android:drawable="@drawable/ic_fore_mint" />
+</adaptive-icon>

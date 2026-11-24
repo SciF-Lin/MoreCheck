@@ -1,0 +1,103 @@
+[versions]
+agp = "8.9.2"
+kotlin = "2.1.20"
+ksp = "2.1.20-1.0.32"
+coreKtx = "1.15.0"
+lifecycle = "2.8.7"
+activityCompose = "1.10.1"
+composeBom = "2025.03.00"
+navigationCompose = "2.8.9"
+room = "2.7.1"
+datastore = "1.1.3"
+work = "2.10.1"
+# 「扫一扫」新增：CameraX 相机栈 + ZXing 纯 Java 解码库（不依赖 Google Play 服务）
+camerax = "1.4.2"
+zxing = "3.5.3"
+# 「实验室 → 数独」新增：WebViewAssetLoader 把 assets 映射成合法 https origin
+# （数独页面用 Blob 起 Worker 做题目生成，file:// 的 opaque origin 会被
+# Chromium 以 SecurityError 拒绝，详见 ui/lab/SudokuScreen.kt 的 KDoc）。
+# 版本取 1.17.1：写代码时从 google() 仓库的 maven-metadata.xml 核实过它是最新
+# **稳定版**（1.18.0 仍是 rc01）。取稳定线不取 rc：本项目是自用分发，
+# 不需要抢新特性，而 rc 版在个别 WebView 版本上行为可能变。
+webkit = "1.17.1"
+# 单元测试（v1.1.75 首次引入）：只做纯 JVM 逻辑的回归，不引入任何 Android 测试栈。
+# junit 4.13.2 是当前 4.x 最后版本；timetable 解析器与日期/连续打卡计算都是纯 JVM，
+# 用 `testImplementation` 即可，跑 `./gradlew test` 不需要模拟器。
+junit = "4.13.2"
+# 「设置 → 安全 → 开屏密码」（2026-10-25）：指纹走系统 BiometricPrompt。
+# 1.1.0 是该库的稳定终版（Google 已冻结维护，功能完备）；只用到
+# BiometricPrompt + BiometricManager 两个 API，无传递性风险。
+# ⚠️ 它传递依赖 fragment 1.2.5，而 MainActivity 为 BiometricPrompt 改继承
+# FragmentActivity 后需要 fragment ≥1.3（lintVital 的
+# InvalidFragmentVersionForActivityResult 会拦）；因此下面显式声明新版 fragment，
+# Gradle 取最高版本，1.8.8 胜出。
+biometric = "1.1.0"
+fragment = "1.8.8"
+# ── 三方 SDK（2026-10-27 首次接入）─────────────────────────────────────────
+# 本项目此前**零三方运行时依赖**（只有 AndroidX + zxing），网络请求是手写
+# `HttpURLConnection`（见 HotSearchScreen.httpGetText）、图片是手写
+# `BitmapFactory` + inSampleSize。这两处都是"自己写也对、但每加一个数据源就复制一遍"。
+# 接入原则：只引**能替掉重复代码**的库，不引任何统计/广告/推送。
+#
+# OkHttp 4.12.0：4.x 稳定线最后一版（5.x 需要 Kotlin 2.x + 更高 minSdk 约束，
+# 且 5.0.0 的 API 有变更）。本项目 minSdk 29，4.12.0 完全够用。
+okhttp = "4.12.0"
+# Coil 3.1.0：3.x 是 Compose 原生版本（2.x 走 View 系、需要 Accompanist 桥接）。
+# 只用到 `AsyncImage` + 本地 File 模型；网络抓取模块 coil-network-okhttp
+# 复用上面那个 OkHttpClient（共享连接池，不多一份线程池）。
+coil = "3.1.0"
+# ── 「发现 → 音乐」（2026-11-05）─────────────────────────────────────────
+# media3-exoplayer 1.11.1：官方 ExoPlayer 的独立发行版（不是旧的
+# com.google.android.exoplayer）。这里只引 exoplayer 核心：播放 HTTP 音频流
+# （mp3/aac）足够，不引 media3-ui（本项目界面全是 Compose，用不上它的 View 组件）。
+# 取最新稳定线：它要求 compileSdk ≥ 35，本项目是 36。
+#
+# 2026-11-08 追加 media3-session：后台播放 + 通知栏/锁屏控制需要
+# `MediaSession` / `MediaSessionService`，它们在这个独立的 artifact 里
+# （exoplayer 核心不含 session）。同版本号，避免两套 media3 版本混用。
+media3 = "1.11.1"
+# ── 崩溃监控 SDK（2026-11-05 需求 2）────────────────────────────────────
+# com.tencent.bugly:crashreport 4.1.9.7：Maven Central 上的最新发布（2026-10 更新）。
+# 只在 release 且用户同意隐私政策后初始化，AppId 由构建期注入（见 app/build.gradle.kts）。
+bugly = "4.1.9.7"
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
+androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
+androidx-camera-core = { group = "androidx.camera", name = "camera-core", version.ref = "camerax" }
+androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
+androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
+androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
+androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
+androidx-fragment-ktx = { group = "androidx.fragment", name = "fragment-ktx", version.ref = "fragment" }
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
+androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
+androidx-media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
+bugly-crashreport = { group = "com.tencent.bugly", name = "crashreport", version.ref = "bugly" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

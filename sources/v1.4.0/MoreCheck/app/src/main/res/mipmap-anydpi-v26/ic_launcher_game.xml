@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    「游戏任务」自适应图标（2026-10-25 需求）：三个游戏宿主 Activity 在
+    最近任务里的独立卡片改用与应用图标**不同的样式**。
+
+    与「图标更改」那九套 `ic_launcher_*` 的区别：本图标**没有**对应的
+    activity-alias、不进 `AppIconRepository.BUILT_IN_ICON_IDS`、不在桌面上出现——
+    它只作为三个非 LAUNCHER Activity 的 `android:icon`（最近任务卡 / 任务信息
+    里显示）。minSdk 29 下 `-v26` 资源恒命中，无需位图兜底。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_game_background" />
+    <foreground android:drawable="@drawable/ic_icon_fore_game" />
+</adaptive-icon>

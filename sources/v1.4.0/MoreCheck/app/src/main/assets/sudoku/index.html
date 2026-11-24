@@ -1,0 +1,5500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<!-- MoreCheck 云同步（v3）：把云端拉下来的游戏存档灌进 localStorage。
+     必须在本页自身脚本读取 localStorage 之前执行，因此放在 <head> 最前面。
+     没有待灌入快照时整段静默跳过。 -->
+<script>
+(function(){try{var b=window.__CIM_GAME__;if(!b)return;var p=b.pendingState();if(p){var d=JSON.parse(p);for(var k in d){try{localStorage.setItem(k,d[k]);}catch(e){}}b.markApplied();}}catch(e){}})();
+</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>数独 Sudoku</title>
+<style>
+/* ==========================================================================
+   数独 · 主样式
+   --------------------------------------------------------------------------
+   配色权威来源：design/art/sudoku-visual-identity.md §8.4（v1.3 权威版，
+   13 个独立色相值）。⚠️ 该文档 §1 是已废弃的旧蓝色系，本文件不使用。
+   UX 规格 §2.2 的 13 色色板为准。
+
+   三个关键约束（改样式前必读）：
+   1. peer 高亮走**填充通道**（格内面积），不走描边。描边无法调节强度，
+      填充可以；且线条在格**之间**、填充在格**内部**，物理上不可能混淆。
+   2. same-digit 的 **4px 圆点是承重结构**，不是装饰。peer 与 same-digit
+      正常视觉下分离度仅 1.57:1、红色盲 1.43:1，颜色和粗细都区分不开，
+      圆点是唯一区分通道，不得省略。
+   3. 焦点环**按表面亮度**反转，不按元素类型。判断依据是当前表面的亮度：
+      白环在琥珀填充上仅 1.34:1、青色上 1.51:1，不反转就 fail。
+   ========================================================================== */
+
+:root {
+  /* ===== 颜色：13 独立色相值（勿增）=====
+     peer 两色为 #E8EDF5 的 alpha 派生，非新色相值 */
+  --c-bg: #12151C;            /* 页面底 / 深色焦点环 */
+  --c-cell: #171B25;          /* 格位底（统一，given 不再另设底色） */
+  --c-key: #1C2230;           /* 键盘键底 */
+  --c-d-given: #E8EDF5;       /* 题面数字 / 键盘数字 / 亮色焦点环 */
+  --c-d-user: #6FD3C7;        /* 用户填写 / 键盘激活底 */
+  --c-d-note: #8B93A8;        /* 笔记 / 次要文字 */
+  --c-d-conflict: #FF6B6B;    /* 冲突 */
+  --c-d-disabled: #828B9B;    /* 键盘禁用态数字 4.63:1 */
+  --c-s-select: #FFC53D;      /* 选中描边 2px / 新纪录 */
+  --c-s-same: #4E9A90;        /* 相同数字描边 1px + 4px 圆点 */
+  --c-peer-empty: #454953;    /* peer·空格   22% 提亮，1.91:1 */
+  /* ⚠️ peer·有内容 8% —— 上限由 note 4.5:1 决定，勿上调。
+     9% 即跌至 4.42:1 不达标。8% 的作用是"保住笔记可读"的安全底色，
+     并非为了让有内容的格子"看起来被高亮"。见 §8.2 修正 5。 */
+  --c-peer-occupied: #282C36;
+  --c-line-box: #8593B0;      /* 宫分隔线 2px，5.57:1 */
+  --c-line-minor: #6B7996;    /* 格位细线 1px，3.94:1 vs 格位底 / 3.19:1 vs peer 8% 档。
+                                  22% 档（2.06:1）**显式豁免**，数学上无解：在 #454953 上
+                                  达 3:1 需亮度 ≥0.29964，而 2px 宫线 #8593B0 自身仅 0.28989，
+                                  任何达标的线色都比宫线更亮，会把「宫线重于细线」的层级倒挂。
+                                  22% 档只出现在「空格 + 无笔记」格（格内无内容），此时边界由
+                                  peer 填充与格位的 1.91:1 亮度差承载，不由这 1px 线承载。
+                                  备案见 tools/palette-doc-reconcile.js 的 WAIVERS。 */
+
+  /* ===== 字体（仅系统字体，零外链） ===== */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Segoe UI Variable",
+    Roboto, "Helvetica Neue", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif;
+  --weight-regular: 400;  --weight-medium: 500;
+  --weight-semibold: 600; --weight-bold: 700;
+  --font-size-sm: 13px;   --font-size-base: 15px;   --font-size-md: 17px;   --font-size-lg: 20px;
+  --line-height-tight: 1.15; --line-height-normal: 1.5;
+
+  /* ===== 间距（8px 基准，4 的倍数） ===== */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-8: 40px; --space-10: 48px;
+
+  /* ===== 圆角与边框 ===== */
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px; --radius-full: 9999px;
+
+  /* ===== 棋盘尺寸（UX §1.2 公式，2026-10 手机适配改造）=====
+     ⚠️ 易错点 9：棋盘尺寸**完全交给 CSS**，JS 不缓存像素值。
+     屏幕旋转后 min()/clamp() 会自动重算，不会溢出。
+
+     ⚠️ 改造要点：--cell 从「只按宽度算」改成「宽度与高度两个约束取小」。
+     只按宽度算时，竖屏下棋盘会按 465px 屏宽撑到 ~49px/格，
+     把键盘挤出视口 —— 这正是"棋盘偏小/需要滚动"的根因。
+
+     三个输入：
+     - --avail-w：棋盘可用宽度（扣左右内边距与刘海安全区）；
+     - --hud-h  ：除棋盘之外的**全部竖向固定开销**。它由键盘两档高度
+                  （--key-min / --mode-h）**代数推导**，不是拍脑袋的常数。
+                  逐项（游玩状态下菜单是 hidden，.app 只有 #game 一个可见子项，
+                  所以 .app 自己的 gap 不参与）：
+                    .app 上下 padding            8 + 8 = 16
+                    头部 .app__header                 48
+                    #game 的 gap（头部↔主体）          8
+                    .app__body 的 gap（盘面列↔键盘）   12
+                    盘面列内 gap（棋盘↔状态条）       12
+                    状态条 .app__status                24
+                    键盘区内 gap（模式条↔数字键盘）     8
+                    数字键盘两行之间 gap（8×2）        16
+                    键盘区 padding-bottom              8
+                  → 固定部分合计 152px；再加键盘自身的 mode-h + 3×key-min
+                  与 16px 安全余量 → 常量取 168px。
+                  改键盘两档 clamp 时**无需**改这里（自动跟），
+                  改任何固定间距（padding / gap / 状态条高）才需要同步 152。
+     - 下限 24px 来自 UX §0 的 T2 分级（格位 ≥24px）：特意从 30px 下调到 24px，
+       让极矮视口（横屏 / 分屏 / 小窗）宁可格子小一点也**不裁切、不出滚动条**。 */
+  --gutter: 8px;              /* 移动端 8px，桌面端 16px */
+  --board-max: 560px;         /* 上限：禁止继续放大 */
+  /* 竖屏默认（键盘在盘面下方）：见上方推导 */
+  --hud-h: calc(168px + var(--mode-h) + 3 * var(--key-min));
+  --avail-w: calc(100vw - 2 * var(--gutter)
+                  - env(safe-area-inset-left) - env(safe-area-inset-right));
+  /* 先写 vh 版兜底，再用 dvh 版覆盖：不支持 dvh 的旧 WebView 会整条丢弃
+     第二条声明、回落到 vh —— 这正是 HANDOVER 5.15 要求的渐进写法。 */
+  --cell: clamp(24px, min(calc((var(--avail-w) - 10px) / 9),
+                          calc((100vh  - var(--hud-h) - 10px) / 9)), 62px);
+  --cell: clamp(24px, min(calc((var(--avail-w) - 10px) / 9),
+                          calc((100dvh - var(--hud-h) - 10px) / 9)), 62px);
+  /* 字号下限从 18px 下调到 16px：格位下限从 30px 降到 24px 后，
+     18px 字会占到小格的 75%，视觉上「顶格」；16px 仍远高于
+     --font-size-sm 的 13px，不影响可读性分级。 */
+  --digit: clamp(16px, calc(var(--cell) * 0.55), 34px);
+  --pencil: calc(var(--digit) * 0.40);
+
+  /* ===== 触摸目标（UX §0 发现 1 分级）=====
+     T1 控件严格 44px；T2 格位 ≥24px（9×44=396px 超出 iPhone 14 的
+     393px，这是数学事实，不要试图让格位到 44px）；T3 窄屏外扩热区。 */
+  --tappable: 44px;
+  --cell-hit-slop: 4px;
+  /* 键盘两档高度：**下限永远是 T1 的 44px**（无障碍硬约束，不得下调），
+     上限由 dvh 派生 —— 竖屏富余高度优先喂给键盘：键更高更好按，
+     同时键盘区不再退化成「细窄一条 + 两侧大片留白」。 */
+  --key-min: clamp(44px, 7vh, 66px);
+  --key-min: clamp(44px, 7dvh, 66px);
+  --mode-h: clamp(44px, 5.6vh, 48px);
+  --mode-h: clamp(44px, 5.6dvh, 48px);
+
+  /* ===== 动效（极简） ===== */
+  --dur-drop: 120ms;   --dur-erase: 100ms;   --dur-select: 80ms;
+  --dur-highlight: 120ms; --dur-press: 0ms;   --dur-release: 140ms;
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-emphasis: cubic-bezier(0.2, 0, 1, 1);
+}
+
+/* ===== 焦点环：按表面亮度自动选色 =====
+   规则：暗表面用亮环，实心/亮表面用暗环。**不要按元素类型判断。** */
+:focus-visible {
+  outline: 2px solid var(--c-d-given);   /* 暗底：亮环 13.52-15.54:1 */
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--c-bg);    /* 深色内间隙 */
+}
+:focus:not(:focus-visible) { outline: none; }
+
+/* 实心表面（青/琥珀填充）必须反转：亮环在此仅 1.34-1.51:1 */
+.key--active:focus-visible,
+.mode-btn--active:focus-visible,
+.difficulty--active:focus-visible,
+.btn--primary:focus-visible {
+  outline-color: var(--c-bg);            /* 暗环 10.28-11.57:1 */
+  box-shadow: 0 0 0 2px var(--c-d-given);
+}
+
+/* ===== 基础 ===== */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+/* HANDOVER 5.15 坑 2：`html` 必须自己铺一层纯色底。
+   WebView 在页面绘制完成前、以及任何"文档比视口矮"的瞬间，露出的都是
+   这层底；不铺就是白条。⭐ 切记不要用 background-attachment 的 fixed 值
+   （那个属性在 WebView 里会让背景不随文档铺开，正是坑 2 本身）。 */
+html {
+  background-color: var(--c-bg);
+}
+
+body {
+  background: var(--c-bg);
+  color: var(--c-d-given);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  -webkit-text-size-adjust: 100%;
+  /* R-5 禁用双击缩放（避免坐标偏移导致误触）*/
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  /* ⚠️ 易错点 8：禁止用 100vh 定位底部键盘。
+     iOS Safari 的 vh 不含地址栏区域，375px 竖屏下键盘会被推出视口。
+     用 flex 布局 + dvh 让键盘始终在视口内。
+
+     ⚠️ 手机适配改造：`min-height` 只作为**兜底下限**，整页高度真正由
+     `height: 100dvh` 钉死（`dvh` 跟随 WebView 可视高度，比 vh 稳）。
+     内容若因异常字体/超大安全区仍然超高，会由 body 自己滚动 —— 这是
+     "宁可滚一点也不要裁掉"的最后退路。 */
+  min-height: 100vh;
+  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;         /* 四个宽度下均不得出现横向滚动 */
+  overflow-y: auto;           /* 仅在极端情况下才会真滚动（见上） */
+}
+
+[hidden] { display: none !important; }
+
+/* ===== 应用外框：flex 列，头部 / 盘面 / 键盘三段 ===== */
+
+.app {
+  /* `flex: 1 0 auto`：空闲时用 flex-grow 撑满视口（键盘才能被 margin-top:auto
+     推到底部）；内容一旦高于视口就**不收缩**（flex-shrink 0），让内容按
+     真实高度溢出、由 body 的 overflow-y 滚动 —— 收缩反而会让子项互相压叠。 */
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;              /* 关键：允许子项在 flex 中收缩，避免溢出 */
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  /* 左右内边距带上刘海安全区；与 --avail-w 的扣减口径保持一致，
+     否则「算宽度时扣了、实际没扣」会让棋盘横向溢出一条缝。 */
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+  padding-left: calc(var(--gutter) + env(safe-area-inset-left));
+  padding-right: calc(var(--gutter) + env(safe-area-inset-right));
+  gap: var(--space-2);
+  /* ⚠️ 这里刻意**不用** overflow-x: hidden：
+     CSS 规定「一个轴非 visible 时另一轴的计算值会从 visible 变成 auto」，
+     给 .app 任一方向设 hidden 都会把 .app 变成滚动容器、抢走 body 的滚动职责。
+     横向溢出由 body 的 overflow-x: hidden 兜，纵向由 body 的 overflow-y: auto 兜。 */
+  min-width: 0;
+}
+
+/* ===== 游戏界面外框 =====
+   ⚠️ 新增（原文件没有 #game 的任何样式）：让 #game 成为 flex 列，
+   使 `.app__body` 能吃掉视口剩余高度 —— 这样「棋盘靠上、键盘贴底」
+   才能成立；不加这条，#game 是普通 block，剩余高度会全部堆在最底下、
+   键盘被顶到视口底部之外。
+   只加样式、不动 DOM，JS 仅通过 hidden 属性开关它，互不影响。 */
+#game {
+  display: flex;
+  flex-direction: column;
+  /* 同样 `flex: 1 0 auto`：能吃剩余高度，但内容超高时**不压缩**，
+     宁可让 body 出滚动条，也不要子项互相压叠（压叠会直接遮住键盘）。 */
+  flex: 1 0 auto;
+  min-height: 0;
+  gap: var(--space-2);
+}
+
+/* ===== 头部 ===== */
+
+.app__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 48px;
+}
+
+.app__title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--weight-semibold);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app__timer {
+  font-size: var(--font-size-md);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;   /* 等宽数字，读秒不跳动 */
+  color: var(--c-d-given);
+  flex: 0 0 auto;
+}
+body.no-timer .app__timer { display: none; }
+
+/* ===== 主体 ===== */
+
+.app__body {
+  /* 同上：吃剩余高度但**不压缩**，避免超高时棋盘与键盘互相压叠。 */
+  flex: 1 0 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* ⚠️ HANDOVER 5.15 坑 3：**不能用 justify-content: center**。
+     内容一旦比视口高（横屏 / 分屏 / 小窗），居中会把溢出**对半分到上下**，
+     上半部分 top 变负 → 棋盘跑到屏幕外且滚不到。
+     改成 flex-start + 键盘区 margin-top:auto：内容装得下时键盘贴底，
+     装不下时从顶部开始、溢出的部分落在下方（可滚），永远不会出现负 top。 */
+  justify-content: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+/* 棋盘列（盘面 + 状态条）：原文件只在桌面媒体查询里定义，这里补基础规则，
+   让移动端也能享受「状态条与盘面同宽、居中对齐」的统一约束。 */
+.board-col {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* ===== 棋盘 ===== */
+
+.board {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  /* 宽度三约束取小：格宽×9 + 边框 / 可用宽度 / 硬上限。
+     用 --avail-w（已扣安全区）替代原来的 100vw 口径。 */
+  width: min(calc(var(--cell) * 9 + 10px), var(--avail-w), var(--board-max));
+  background: var(--c-cell);
+  border: 5px solid var(--c-line-box);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  /* ⚠️ 不要给 81 个格子各加 border —— 那会产生 81 个绘制层。
+     格线改由 .cell 的 box-shadow: inset 绘制。 */
+  touch-action: manipulation;
+}
+
+.cell {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--digit);
+  color: var(--c-d-given);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--line-height-tight);
+  cursor: pointer;
+  /* 格位细线：1px #6B7996，画在格内边缘（inset，不占布局）
+     注意：inset 意味着这 1px 落在格位**边缘像素带**上，而笔记文字画在格**内部** ——
+     两者像素不相交，故「线色提亮」与「笔记文字对比度」是两组独立约束。 */
+  box-shadow: inset -1px -1px 0 0 var(--c-line-minor);
+  transition: background-color var(--dur-highlight) var(--ease-out);
+}
+
+/* 宫分隔线 5px：仅用明度/粗细区分，绝不用色相（§7.5 反模式警示）
+   boxline-r 标记在宫之间（c=2,5），粗线画在该格右侧。
+   boxline-b 标记在宫之间（r=2,5），粗线画在该格底侧。 */
+.cell[data-boxline-r] {
+  box-shadow: inset -5px 0 0 0 var(--c-line-box),     /* 宫线：右侧 */
+              inset 0 -1px 0 0 var(--c-line-minor);   /* 细线：底侧 */
+}
+.cell[data-boxline-b] {
+  box-shadow: inset -1px 0 0 0 var(--c-line-minor),   /* 细线：右侧 */
+              inset 0 -5px 0 0 var(--c-line-box);     /* 宫线：底侧 */
+}
+.cell[data-boxline-r][data-boxline-b] {
+  box-shadow: inset -5px 0 0 0 var(--c-line-box),     /* 宫线：右侧 */
+              inset 0 -5px 0 0 var(--c-line-box);     /* 宫线：底侧 */
+}
+
+/* T3 窄屏命中区补偿：外扩 4px，不越中心线（UX §1.3） */
+.cell::after {
+  content: "";
+  position: absolute;
+  inset: calc(var(--cell-hit-slop) * -1);
+  pointer-events: none;
+}
+
+/* peer：填充通道，两级强度。
+   ⚠️ 易错点 7：这是 peer 唯一的表达通道，**不得**改成描边。
+   ⚠️ D-NOTE-01：空格若含笔记必须走 8% 安全档 —— note 在 22% 上仅 2.93:1（AA 要求 4.5）。
+
+   失败安全的关键是**用正向标记**data-note-free，而不是 :not([data-has-notes])：
+   :not([data-has-notes]) 在属性「缺失」时同样命中，会让疏漏的格子落到 22% 危险档，
+   方向正好相反。改为只有 JS 明确标记「确实无笔记」时才给22%，
+   任何未标记/漏标的情况都落8% —— worst case 是"高亮变弱"，不是"笔记看不见"。 */
+.cell[data-peer="empty"] { background: var(--c-peer-occupied); }            /* 缺省：8% 安全档 */
+.cell[data-peer="empty"][data-note-free] { background: var(--c-peer-empty); } /* 确认无笔记：22% */
+.cell[data-peer="occupied"] { background: var(--c-peer-occupied); }
+
+/* 内容状态：given 不再另设底色，靠字重区分 */
+.cell[data-state="given"] { font-weight: var(--weight-semibold); }
+.cell[data-state="user"]  { color: var(--c-d-user); font-weight: var(--weight-regular); }
+.cell[data-state="empty"] { font-weight: var(--weight-regular); }
+
+/* conflict：字重 700 + 2px 底部波浪线（非颜色通道，WCAG 1.4.1） */
+.cell[data-state="conflict"] {
+  color: var(--c-d-conflict);
+  font-weight: var(--weight-bold);
+  background: var(--c-peer-occupied);
+  box-shadow: inset -1px -1px 0 0 var(--c-line-minor), inset 0 -2px 0 0 var(--c-d-conflict);
+}
+
+/* same-digit：1px 描边 + 左上 4px 实心圆点
+   ⚠️ 易错点 6：这个圆点是**承重结构**。peer 与 same-digit 的描边分离度
+   正常视觉下仅 1.57:1、红色盲 1.43:1，圆点是唯一区分通道，不得省略。 */
+.cell[data-state="same"] {
+  box-shadow: inset 0 0 0 1px var(--c-s-same), inset -1px -1px 0 0 var(--c-line-minor);
+}
+.cell[data-state="same"]::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--c-s-same);
+  /* 圆点必须压在 peer 填充之上，故给 z-index */
+  z-index: 2;
+}
+
+/* selected：2px 描边，全图唯一最粗，永远最上 */
+.cell[data-state="selected"] {
+  box-shadow: inset 0 0 0 2px var(--c-s-select);
+  z-index: 3;
+}
+
+/* 笔记：40% 字号 + 3×3 迷你栅格 */
+.cell span {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  font-size: var(--pencil);
+  color: var(--c-d-note);
+  line-height: 1;
+  font-weight: var(--weight-regular);
+}
+.cell[data-state="user"] span,
+.cell[data-state="given"] span { display: block; font-size: var(--digit); color: inherit; }
+
+/* ===== 状态条 ===== */
+
+.app__status {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  /* 与棋盘同宽（三约束同口径），否则左侧文字会对不齐棋盘边缘 */
+  width: min(calc(var(--cell) * 9 + 10px), var(--avail-w), var(--board-max));
+  min-height: 24px;
+  max-width: 100%;
+  font-size: var(--font-size-sm);
+  color: var(--c-d-note);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== 键盘区（常驻底部）===== */
+
+.keypad-wrap {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  /* ⚠️ 手机适配关键：原文件此处**没有宽度**，而父级是 align-items:center，
+     于是键盘退化成一条按内容收缩的窄条（≈150px，两侧大片留白）——
+     这正是用户反馈的"键盘与棋盘不搭、留白浪费"。
+     这里让它与棋盘**同宽**（同一个三约束表达式），键盘立即撑满。 */
+  width: min(calc(var(--cell) * 9 + 10px), var(--avail-w), var(--board-max));
+  max-width: 100%;
+  padding-bottom: var(--space-2);
+  /* 软键盘/地址栏收缩不遮挡棋盘区 */
+  padding-bottom: max(var(--space-2), env(safe-area-inset-bottom));
+  /* 富余高度优先分给「棋盘 → 键盘」之间的空白，而不是堆到页面底部；
+     溢出时 auto 外边距自动归零，不会出现负 top（HANDOVER 5.15 坑 3）。 */
+  margin-top: auto;
+}
+
+/* 模式条：三态常驻可见，不可折叠收起 */
+.mode-bar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+}
+
+.mode-btn {
+  min-height: var(--mode-h);         /* 下限 44px（T1），上限由 dvh 派生 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: var(--c-key);
+  color: var(--c-d-given);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  cursor: pointer;
+  /* 零延迟原则：按下态不挂 transition */
+}
+.mode-btn:active { transition: none; }
+.mode-btn__symbol { font-size: var(--font-size-md); line-height: 1; }
+.mode-btn__label { font-size: var(--font-size-sm); color: var(--c-d-note); line-height: 1; }
+.mode-btn--active { background: var(--c-s-select); color: var(--c-bg); border-color: var(--c-s-select); }
+.mode-btn--active .mode-btn__label { color: var(--c-bg); }
+
+/* 数字键盘 3×3 */
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+}
+
+.key {
+  position: relative;
+  min-height: var(--key-min);       /* T1 严格 44px */
+  /* 防细长：键盘行高由 grid-auto-rows / min-height 决定，禁止再被外层压缩
+     （与 .btn 的 flex:0 0 auto 同一条防御口径）。 */
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: var(--c-key);
+  color: var(--c-d-given);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  overflow: hidden;
+  transition: background-color var(--dur-release) var(--ease-out);
+}
+.key:active { transition: none; }   /* 按下 0ms */
+.key__digit { font-size: var(--font-size-lg); line-height: 1; }
+.key__count { font-size: var(--font-size-sm); color: var(--c-d-note); line-height: 1; font-variant-numeric: tabular-nums; }
+
+/* 笔记模式下已记候选的数字键 */
+.key--noted { background: var(--c-peer-empty); }
+.key--noted .key__count { color: var(--c-d-user); }
+
+/* 禁用态：数字保持 4.63:1 可读，"已用尽"由三通道承载
+   —— (0) 徽标 + 斜线纹理 + disabled 属性。不能只靠低对比度。 */
+.key:disabled {
+  color: var(--c-d-disabled);
+  cursor: default;
+}
+.key--exhausted::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(45deg,
+    transparent 0 5px, rgba(130, 139, 155, 0.14) 5px 6px);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+
+/* ===== 菜单 ===== */
+
+.menu {
+  /* ⚠️ 与 .app__body 同一个理由（HANDOVER 5.15 坑 3）：不用 justify-content:center。
+     `flex: 0 0 auto` + `margin-block: auto`：内容矮时上下自动外边距把菜单
+     视觉居中；内容一旦比视口高（横屏 / 大字号），auto 外边距归零、从顶部
+     开始排，溢出落在下方由 body 滚动兜住 —— 永远不出现负 top。 */
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  margin-block: auto;
+  gap: var(--space-4);
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: var(--space-4) 0 calc(var(--space-4) + env(safe-area-inset-bottom));
+  width: 100%;
+}
+
+.menu__title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--weight-semibold);
+  text-align: center;
+}
+
+.menu__list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+}
+
+.difficulty {
+  min-height: 56px;                 /* T1 ≥44px，难度项高 56 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--c-cell);
+  color: var(--c-d-given);
+  border: 1px solid var(--c-line-minor);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  cursor: pointer;
+}
+.difficulty--active {
+  background: var(--c-s-select);
+  color: var(--c-bg);
+  border-color: var(--c-s-select);
+  font-weight: var(--weight-semibold);
+}
+
+.menu__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.btn {
+  min-height: var(--tappable);       /* T1 严格 44px，弹窗按钮同样 */
+  /* 防细长：在 flex 列容器（.menu__actions / .panel__actions）里禁止被压缩。
+     某些 WebView/字体缩放组合下 flex-shrink 默认值会把按钮压成一行文字高，
+     显式钉死"不参与伸缩、高度由内容+min-height 决定"。 */
+  flex: 0 0 auto;
+  height: auto;
+  padding: 0 var(--space-4);
+  background: var(--c-key);
+  color: var(--c-d-given);
+  border: 1px solid var(--c-line-minor);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  cursor: pointer;
+}
+.btn--primary {
+  background: var(--c-d-user);
+  color: var(--c-bg);
+  border-color: var(--c-d-user);
+  font-weight: var(--weight-semibold);
+}
+.btn:disabled { opacity: 0.6; cursor: default; }
+.btn--wide { width: 100%; }
+
+/* ===== 弹层 ===== */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 安全区：横屏时左右刘海不能压住面板内容 */
+  padding: calc(var(--space-4) + env(safe-area-inset-top))
+           calc(var(--space-4) + env(safe-area-inset-right))
+           calc(var(--space-4) + env(safe-area-inset-bottom))
+           calc(var(--space-4) + env(safe-area-inset-left));
+  background: rgba(18, 21, 28, 0.92);
+}
+
+.panel {
+  width: min(100%, 420px);
+  /* 面板自身内部滚动（overlay 是 fixed，所以这里的居中 + 内部滚动是安全的，
+     不会出现 HANDOVER 5.15 坑 3 那种「负 top」）。
+     dvh 版在后、vh 版在前，同样是渐进覆盖。 */
+  max-height: 85vh;
+  max-height: 85dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--c-cell);
+  border: 1px solid var(--c-line-minor);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  animation: panel-in 200ms var(--ease-emphasis);
+}
+
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.panel__title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--weight-semibold);
+  text-align: center;
+}
+.panel__actions { display: flex; flex-direction: column; gap: var(--space-2); }
+.panel__empty { color: var(--c-d-note); text-align: center; padding: var(--space-5) 0; }
+
+/* 完成面板 */
+.complete__time {
+  margin: 0;
+  font-size: 40px;
+  font-weight: var(--weight-semibold);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+/* 新纪录用琥珀色，与选中色同源，不引入新色相（守住 13 色预算） */
+.complete__record {
+  margin: 0;
+  text-align: center;
+  color: var(--c-s-select);
+  font-weight: var(--weight-semibold);
+}
+.complete__meta { margin: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.complete__meta > div { display: flex; justify-content: space-between; gap: var(--space-3); }
+.complete__meta dt { color: var(--c-d-note); margin: 0; }
+.complete__meta dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+/* 暂停面板的校验结果 */
+#pause-stats {
+  color: var(--c-d-note);
+  text-align: center;
+  min-height: 1.5em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== 设置 ===== */
+.setting__hint {
+  margin: 0 0 var(--space-3);
+  color: var(--c-d-note);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.settings { display: flex; flex-direction: column; gap: var(--space-3); }
+.setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--tappable);       /* T1：点击区 ≥44px */
+}
+.setting__label { flex: 1 1 auto; }
+.setting__toggle {
+  width: 48px;
+  height: 28px;
+  flex: 0 0 auto;
+  accent-color: var(--c-d-user);
+  cursor: pointer;
+}
+
+/* ===== 统计面板 ===== */
+
+.stats { display: flex; flex-direction: column; gap: var(--space-3); }
+.stats-totals { display: flex; flex-wrap: wrap; gap: var(--space-3); justify-content: space-around; }
+.stats-totals__item { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.stats-totals__num { font-size: var(--font-size-lg); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+.stats-totals__label { font-size: var(--font-size-sm); color: var(--c-d-note); }
+.stats-record { margin: 0; color: var(--c-d-note); font-size: var(--font-size-sm); text-align: center; }
+
+.stats-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.stats-table th, .stats-table td { padding: var(--space-2) var(--space-1); text-align: right; }
+.stats-table thead th { color: var(--c-d-note); font-weight: var(--weight-medium); font-size: var(--font-size-sm); }
+.stats-table tbody th { text-align: left; font-weight: var(--weight-medium); }
+.stats-table tbody tr + tr th, .stats-table tbody tr + tr td { border-top: 1px solid var(--c-line-minor); }
+
+/* ===== Loading / Toast ===== */
+
+.loading {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  background: rgba(18, 21, 28, 0.9);
+}
+.loading__spinner {
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--c-line-minor);
+  border-top-color: var(--c-d-user);
+  border-radius: 50%;
+  animation: spin 900ms linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading__text { color: var(--c-d-note); font-size: var(--font-size-base); }
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--space-8) + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 300;
+  max-width: min(90vw, 420px);
+  padding: var(--space-3) var(--space-4);
+  background: var(--c-key);
+  color: var(--c-d-given);
+  border: 1px solid var(--c-line-minor);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+
+/* ===== 响应式 ===== */
+
+/* 桌面 / 平板：盘面在左、键盘在右侧栏（§7.2），纵向约束不再是键盘而是头部。
+   ⚠️ 本轮需求 7：「将键盘与棋盘上下摆放，更符合手机屏幕」——
+   断点从 768px 收窄到 1024px：768~1023px 的小平板竖屏宽度足够放下
+   "棋盘 + 280px 键盘侧栏"但两侧会大片留白，上下摆放（棋盘居中 + 键盘同宽贴底）
+   在竖屏上的可读性与可达性都更好。手机（含大屏手机）从此**永远**上下摆放。 */
+@media (min-width: 1024px) {
+  :root {
+    --gutter: 16px;
+    /* 桌面端布局（.app__body 是 row）：除棋盘外的竖向开销
+       = 上下 padding 24 + 头部 48 + #game gap 8 + 状态条 24
+         + board-col gap 12 = 116px，再加 12px 安全余量 = 128px */
+    --hud-h: 128px;
+    /* 棋盘宽度还必须让出右侧键盘侧栏（320px）、两者之间的 32px 间距
+       与 4px 取整余量，否则恰好 1024px 的窄桌面（含平板横屏）会横向溢出。 */
+    --avail-w: calc(100vw - 2 * var(--gutter)
+                    - env(safe-area-inset-left) - env(safe-area-inset-right)
+                    - 320px - var(--space-6) - 4px);
+  }
+  .app {
+    padding-top: var(--space-3);
+    padding-bottom: var(--space-3);
+    padding-left: calc(var(--gutter) + env(safe-area-inset-left));
+    padding-right: calc(var(--gutter) + env(safe-area-inset-right));
+    gap: var(--space-3);
+  }
+  .app__body {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: center;
+    gap: var(--space-6);
+    /* row 布局下横向居中即可；不要续用移动端的 flex-start（会靠左留白） */
+  }
+  /* 桌面端数字面板在侧栏，不在盘面正下方（§7.2）。
+      ⚠️ 必须显式覆写 width，否则继承移动端的「与棋盘同宽」表达式。 */
+  .keypad-wrap {
+    width: 320px;
+    max-width: 320px;
+    margin-top: 0;
+    padding-bottom: 0;
+  }
+  .keypad-wrap .keypad { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* 横屏 / 矮视口（BP-4）：盘面置左 + 键盘置右
+   ⚠️ 条件里**去掉了 max-width: 768px**（原写法）：手机横屏后 CSS 宽度会变成
+   900 左右，`max-width:768px` 会把手机横屏整个排除在外，落回桌面三段布局，
+   棋盘只剩 ~270px 而左右空一大片。改成按「宽 + 矮」判定，
+   平板横屏 / 小窗也走这一支，行为一致。
+
+   ⚠️ **不能用 `orientation: landscape`**（v1.1.78 实测修复）：Android WebView 里
+   这个媒体特性按**设备屏幕方向**而非视口宽高比求值，竖屏手机（视口 385×746）
+   也会被判成 landscape，于是整页走「盘面左 / 键盘右」的宽屏布局，
+   下方留一大片空白、字也变小。改用纯尺寸判定（宽 ≥ 600 且高 ≤ 560），
+   竖屏 385×746 两个条件都不满足，稳定走竖屏分支。 */
+@media (min-width: 600px) and (max-height: 560px) {
+  :root {
+    /* 横屏是左右布局，除棋盘外的竖向开销：手机横屏（宽 <1024px，本轮起
+       桌面段断点也是 1024）时 = 上下 padding 16 + 头部 48 + #game gap 8
+       + 状态条 24 + board-col gap 12 = 108px；宽 ≥1024px 的平板横屏会同时
+       命中桌面段（padding 12+12）= 116px。取两者较大值 116 再加 8px 余量 = 124px。 */
+    --hud-h: 124px;
+    /* 键盘列宽度先定，棋盘宽度再让：两者相加永远不超过视口宽度
+       （不留「按 48vw 扣、实际却渲染成 min(46vw,340px)」那种口径差）。 */
+    --kp-w: min(46vw, 340px);
+    --avail-w: calc(100vw - 2 * var(--gutter)
+                    - env(safe-area-inset-left) - env(safe-area-inset-right)
+                    - var(--kp-w) - var(--space-3) - 4px);
+  }
+  .app__body {
+    flex-direction: row;
+    align-items: flex-start;
+    /* 横屏下盘面高度受限、宽度有富余，居中让「盘面 + 键盘」整体不留单侧空档 */
+    justify-content: center;
+    gap: var(--space-3);
+    /* 与基础规则同口径：能长、不缩（超高交给 body 滚动，不压叠） */
+    flex: 1 0 auto;
+    min-height: 0;
+  }
+  /* 键盘列：3 列 × 3 行。键宽 ≈(340-16)/3 ≈ 108px，远超 T1 的 44px；
+     比原来的「9 列横排」（键宽只有 ~40px）好按得多。 */
+  .keypad-wrap {
+    width: var(--kp-w);
+    max-width: var(--kp-w);
+    margin-top: 0;
+    align-self: stretch;
+    justify-content: flex-start;
+  }
+  .keypad { grid-template-columns: repeat(3, 1fr); }
+  .mode-bar { grid-template-columns: repeat(3, 1fr); }
+  /* 横屏的富余高度全部喂给键盘：3 行键按 1fr 均分剩余高度
+     （.key 自带 min-height:44px 兜底，所以任何情况下都不会低于 T1）。
+     不这么做的话，键盘列底部会留一块与盘面等高的空白，
+     而键仍然是 44px —— 明明有地方却按不准。
+     ⚠️ 必须让 `#keypad` 自己也成为 flex 列：#keypad 是 .keypad-wrap 的唯一
+     子项（它没有 class，是 JS 建的容器），flex:1 加在内层 .keypad 上
+     不会生效 —— 中间隔着这一层非 flex 的 div。 */
+  .keypad-wrap > #keypad {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .keypad-wrap .keypad {
+    flex: 1 1 auto;
+    grid-auto-rows: minmax(var(--key-min), 1fr);
+  }
+}
+
+/* 超窄（BP-5）：紧凑间距，但键盘数字键仍保持 ≥44px 高度 */
+@media (max-width: 360px) {
+  :root { --gutter: 6px; }
+  .app { gap: var(--space-1); }
+  #game { gap: var(--space-1); }
+  .app__body { gap: var(--space-2); }
+  .menu__list { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ===== 减弱动效 =====
+   ⚠️ 用 0.01ms 而非 0 —— 0 会让部分浏览器跳过 transitionend 回调。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ══════════ 主菜单 ══════════ -->
+  <section id="menu" class="menu" aria-label="主菜单">
+    <h1 class="menu__title">数独</h1>
+    <div id="menu-list" class="menu__list" role="radiogroup" aria-label="难度选择"></div>
+    <div class="menu__actions">
+      <button id="new-game-btn" type="button" class="btn btn--primary btn--wide">开始新局</button>
+      <button id="continue-btn" type="button" class="btn btn--wide" hidden>继续本局</button>
+      <button id="stats-btn" type="button" class="btn btn--wide">统计</button>
+      <button id="settings-btn" type="button" class="btn btn--wide">设置</button>
+    </div>
+  </section>
+
+  <!-- ══════════ 游戏界面 ══════════ -->
+  <section id="game" hidden>
+    <header class="app__header">
+      <h1 class="app__title">数独</h1>
+      <!-- 计时器 aria-live="off" 是硬性要求：polite 会让读屏每秒播报时间 -->
+      <span id="timer" class="app__timer" aria-live="off" aria-label="用时">00:00</span>
+      <button id="pause-btn" type="button" class="btn" aria-label="暂停">暂停</button>
+    </header>
+
+    <div class="app__body">
+      <div class="board-col">
+        <div id="board" class="board"></div>
+        <div class="app__status">
+          <span id="status-left"></span>
+          <span id="status-right"></span>
+        </div>
+      </div>
+
+      <!-- 键盘区常驻底部，不用 100vh 定位（易错点 8） -->
+      <div class="keypad-wrap">
+        <div id="keypad"></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<!-- ══════════ 暂停面板 ══════════ -->
+<div id="pause-overlay" class="overlay" hidden>
+  <div class="panel" role="dialog" aria-modal="true" aria-label="暂停">
+    <h2 class="panel__title">暂停</h2>
+    <p id="pause-stats" role="status"></p>
+    <div class="panel__actions">
+      <button id="resume-btn" type="button" class="btn btn--primary btn--wide">继续</button>
+      <button id="verify-btn" type="button" class="btn btn--wide">手动校验</button>
+      <button id="save-btn" type="button" class="btn btn--wide">保存存档</button>
+      <button id="quit-btn" type="button" class="btn btn--wide">返回主菜单</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 完成面板 ══════════ -->
+<div id="complete-overlay" class="overlay" hidden>
+  <div class="panel" role="dialog" aria-modal="true" aria-live="assertive" aria-label="完成">
+    <h2 class="panel__title">完成</h2>
+    <div id="complete-body"></div>
+    <div class="panel__actions">
+      <button id="again-btn" type="button" class="btn btn--primary btn--wide">再来一局</button>
+      <button id="complete-menu-btn" type="button" class="btn btn--wide">返回主菜单</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 设置 ══════════ -->
+<div id="settings-overlay" class="overlay" hidden>
+  <div class="panel" role="dialog" aria-modal="true" aria-label="设置">
+    <h2 class="panel__title">设置</h2>
+    <div id="settings-body" class="settings"></div>
+    <div class="panel__actions">
+      <button id="settings-close" type="button" class="btn btn--primary btn--wide">完成</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 统计 ══════════ -->
+<div id="stats-overlay" class="overlay" hidden>
+  <div class="panel" role="dialog" aria-modal="true" aria-label="统计">
+    <h2 class="panel__title">统计</h2>
+    <div id="stats-body" class="stats"></div>
+    <div class="panel__actions">
+      <button id="stats-close" type="button" class="btn btn--primary btn--wide">完成</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ Loading ══════════ -->
+<div id="loading" class="loading" hidden>
+  <div class="loading__spinner" aria-hidden="true"></div>
+  <p id="loading-text" class="loading__text">正在生成…</p>
+</div>
+
+<!-- ══════════ Toast ══════════ -->
+<div id="toast" class="toast" hidden></div>
+
+<script>
+/* 数独 · 内联打包产物（由 tools/build-ui.mjs 生成，请勿手改）
+ * 源文件：src/engine/*.js + src/ui/*.js
+ * 重新生成：node tools/build-ui.mjs
+ */
+(function () {
+'use strict';
+
+// ══════════════ 模块注册表 ══════════════
+// 每个模块包在自己的 IIFE 里，私有符号天然隔离。
+// 这解决了 parseBoardString 在 solver 与 difficulty 中同名的问题——
+// 直接拼接会因 const 重复声明而 SyntaxError。
+var __registry = {};
+var __cache = {};
+function __def(id, fn) { __registry[id] = fn; }
+function __req(id) {
+  if (__cache[id]) return __cache[id];
+  var fn = __registry[id];
+  if (!fn) throw new Error('模块未注册: ' + id);
+  var exports = fn(__req);
+  __cache[id] = exports;
+  return exports;
+}
+
+__def("sudoku-core.js", function (__req) {
+ 
+                                 
+  
+        
+                          
+                                                               
+                                                                
+                                                            
+                                    
+  
+                      
+   
+
+       
+const SIZE = 9;
+        
+const CELLS = SIZE * SIZE;      
+        
+const BOX_SIZE = 3;
+                                
+const UNIT_COUNT = 27;
+         
+const EMPTY = 0;
+
+          
+const CELL_EMPTY = 0;
+                  
+const CELL_GIVEN = 1;
+            
+const CELL_USER = 2;
+
+           
+const UNIT_ROW = 0;
+           
+const UNIT_COL = 1;
+           
+const UNIT_BOX = 2;
+
+                      
+const ALL_CANDIDATES = 0x1ff;
+
+                                                                     
+                       
+                                                                        
+
+                                        
+const PEER_COUNT = 20;
+                                                 
+const PEER_TOTAL = PEER_COUNT;
+
+                                                           
+const PEER_TABLE =               (() => {
+  const table = new Int16Array(CELLS * PEER_TOTAL);
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const i = r * SIZE + c;
+      const list = [];
+               
+      for (let k = 0; k < SIZE; k++) if (k !== c) list.push(r * SIZE + k);
+               
+      for (let k = 0; k < SIZE; k++) if (k !== r) list.push(k * SIZE + c);
+                                                   
+      const br = r - (r % BOX_SIZE);
+      const bc = c - (c % BOX_SIZE);
+      for (let dr = 0; dr < BOX_SIZE; dr++) {
+        for (let dc = 0; dc < BOX_SIZE; dc++) {
+          const rr = br + dr;
+          const cc = bc + dc;
+          if (rr === r || cc === c) continue;             
+          list.push(rr * SIZE + cc);
+        }
+      }
+      table.set(list, i * PEER_TOTAL);
+    }
+  }
+  return table;
+})();
+
+                                         
+const PEERS = PEER_TABLE;
+
+                                                
+const UNIT_TABLE =               (() => {
+  const table = new Int16Array(UNIT_COUNT * SIZE);
+                         
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) table[r * SIZE + c] = r * SIZE + c;
+  }
+                             
+  for (let c = 0; c < SIZE; c++) {
+    for (let r = 0; r < SIZE; r++) table[(SIZE + c) * SIZE + r] = r * SIZE + c;
+  }
+                      
+  for (let br = 0; br < SIZE; br += BOX_SIZE) {
+    for (let bc = 0; bc < SIZE; bc += BOX_SIZE) {
+      const u = 18 + (br / BOX_SIZE) * BOX_SIZE + bc / BOX_SIZE;
+      let n = 0;
+      for (let dr = 0; dr < BOX_SIZE; dr++) {
+        for (let dc = 0; dc < BOX_SIZE; dc++) {
+          table[u * SIZE + n++] = (br + dr) * SIZE + (bc + dc);
+        }
+      }
+    }
+  }
+  return table;
+})();
+
+                           
+const UNITS = UNIT_TABLE;
+
+                      
+const POPCOUNT =               (() => {
+  const t = new Uint8Array(512);
+  for (let m = 0; m < 512; m++) t[m] = (m & 1) + t[m >> 1];
+  return t;
+})();
+
+                                                                     
+       
+                                                                        
+
+            
+function rowOf(index) {
+  return (index / SIZE) | 0;
+}
+            
+function colOf(index) {
+  return index % SIZE;
+}
+                       
+function boxOf(index) {
+  return (((index / SIZE) | 0) / BOX_SIZE | 0) * BOX_SIZE + ((index % SIZE) / BOX_SIZE | 0);
+}
+           
+function indexOf(row, col) {
+  return row * SIZE + col;
+}
+
+                                                                     
+       
+                                                                        
+
+                   
+function bitCount(mask) {
+  return POPCOUNT[mask & 0x1ff];
+}
+
+                                      
+function singleDigit(mask) {
+  const m = mask & 0x1ff;
+  if (m === 0 || (m & (m - 1)) !== 0) return 0;
+  for (let d = 1; d <= SIZE; d++) if (m & (1 << (d - 1))) return d;
+  return 0;
+}
+
+                      
+function maskToDigits(mask) {
+  const out = [];
+  const m = mask & 0x1ff;
+  for (let d = 1; d <= SIZE; d++) if (m & (1 << (d - 1))) out.push(d);
+  return out;
+}
+
+                  
+function digitsToMask(digits) {
+  let m = 0;
+  for (const d of digits) m |= 1 << (d - 1);
+  return m & 0x1ff;
+}
+
+const now =
+  typeof globalThis.performance?.now === 'function'
+    ? () => globalThis.performance.now()
+    : () => Date.now();
+
+                 
+const nowMs = now;
+
+                                                                     
+           
+                                                                        
+
+          
+function createEmptyBoard() {
+  return new Uint8Array(CELLS);
+}
+
+         
+function cloneBoard(board) {
+  /* ⚠️ 2026-10-22 修复（"继续本局"点了没反应的真凶）：
+     原实现是 `Uint8Array.prototype.slice.call(board)`——它要求 `board` 本身是
+     TypedArray。但**从 localStorage 存档里读回来的 board 是普通 Array**
+     （JSON 没有 TypedArray），continueGame 把 `save.puzzle.givens` 直接传给
+     createPuzzleState → cloneBoard → 抛
+     `TypeError: Method %TypedArray%.prototype.slice called on incompatible receiver`。
+     异常发生在点击回调里，界面上就是"按钮点了完全没反应"（控制台才有红字）。
+     这里按来源分两支：TypedArray 走 slice（零拷贝语义保持），
+     其它（Array / 类数组）用 `Uint8Array.from` 转换后再克隆。 */
+  if (board instanceof Uint8Array) return board.slice();
+  return Uint8Array.from(board);
+}
+
+ 
+                
+                                           
+                      
+                        
+   
+function boardFromString(str) {
+  if (typeof str !== 'string') throw new TypeError('boardFromString: 需要 string');
+  const cleaned = str.replace(/[\r\n\t ]/g, '');
+  if (cleaned.length !== CELLS) {
+    throw new RangeError(`boardFromString: 需要 ${CELLS} 个字符，实际 ${cleaned.length}`);
+  }
+  const board = new Uint8Array(CELLS);
+  for (let i = 0; i < CELLS; i++) {
+    const ch = cleaned[i];
+    if (ch >= '1' && ch <= '9') {
+      board[i] = ch.charCodeAt(0) - 48;
+    } else if (ch === '0' || ch === '.' || ch === '-' || ch === '_') {
+      board[i] = EMPTY;
+    } else {
+      throw new TypeError(`boardFromString: 非法字符 "${ch}" @${i}`);
+    }
+  }
+  return board;
+}
+
+ 
+              
+                            
+                                            
+                    
+   
+function boardToString(board, options = {}) {
+  const emptyChar = options.emptyChar ?? '.';
+  let s = '';
+  for (let i = 0; i < CELLS; i++) s += board[i] === EMPTY ? emptyChar : String(board[i]);
+  return s;
+}
+
+ 
+                  
+                           
+                        
+   
+function boardFromGrid(grid) {
+  if (!Array.isArray(grid) || grid.length !== SIZE) throw new TypeError('boardFromGrid: 需要 9 行');
+  const board = new Uint8Array(CELLS);
+  for (let r = 0; r < SIZE; r++) {
+    const row = grid[r];
+    if (!row || row.length !== SIZE) throw new TypeError('boardFromGrid: 每行需要 9 列');
+    for (let c = 0; c < SIZE; c++) {
+      const v = row[c];
+      board[r * SIZE + c] = v >= 1 && v <= 9 ? v : EMPTY;
+    }
+  }
+  return board;
+}
+
+         
+function countFilled(board) {
+  let n = 0;
+  for (let i = 0; i < CELLS; i++) if (board[i] !== EMPTY) n++;
+  return n;
+}
+
+        
+function countEmpty(board) {
+  return CELLS - countFilled(board);
+}
+
+                                                                     
+        
+                                                                        
+
+ 
+                                        
+                            
+                             
+                            
+                     
+   
+function isValidPlacement(board, index, value) {
+  if (index < 0 || index >= CELLS) return false;
+  if (value < 1 || value > SIZE) return false;
+  const bit = 1 << (value - 1);
+  const base = index * PEER_COUNT;
+  for (let k = 0; k < PEER_COUNT; k++) {
+    if (board[PEER_TABLE[base + k]] === value) return false;
+  }
+  return true;
+}
+
+ 
+                         
+                            
+                               
+   
+function getConflicts(board) {
+  const bad = new Uint8Array(CELLS);
+  for (let u = 0; u < UNIT_COUNT; u++) {
+    for (let d = 1; d <= SIZE; d++) {
+      let first = -1;
+      let count = 0;
+      for (let k = 0; k < SIZE; k++) {
+        const i = UNIT_TABLE[u * SIZE + k];
+        if (board[i] !== d) continue;
+        if (first < 0) first = i;
+        count++;
+      }
+      if (count > 1) {
+        bad[first] = 1;
+        for (let k = 0; k < SIZE; k++) {
+          const i = UNIT_TABLE[u * SIZE + k];
+          if (board[i] === d) bad[i] = 1;
+        }
+      }
+    }
+  }
+  const out = [];
+  for (let i = 0; i < CELLS; i++) if (bad[i]) out.push(i);
+  return out;
+}
+
+ 
+          
+                            
+                                                                                
+                                                     
+   
+function validateBoard(board) {
+  const conflicts = getConflicts(board);
+  const filled = countFilled(board);
+  return {
+    valid: conflicts.length === 0,
+    complete: filled === CELLS && conflicts.length === 0,
+    filled,
+    empty: CELLS - filled,
+    givens: countGivens(board),
+    conflicts,
+  };
+}
+
+                                 
+function countGivens(board) {
+                                      
+  return countFilled(board);
+}
+
+                                                                     
+        
+                                                                        
+
+ 
+                  
+                            
+                                                       
+                                   
+   
+function computeCandidates(board, out) {
+  const cand = out && out.length === CELLS ? out : new Int16Array(CELLS);
+  for (let i = 0; i < CELLS; i++) {
+    if (board[i] !== EMPTY) {
+      cand[i] = 0;
+      continue;
+    }
+    let mask = ALL_CANDIDATES;
+    const base = i * PEER_COUNT;
+    for (let k = 0; k < PEER_COUNT; k++) {
+      const v = board[PEER_TABLE[base + k]];
+      if (v !== EMPTY) mask &= ~(1 << (v - 1));
+    }
+    cand[i] = mask;
+  }
+  return cand;
+}
+
+ 
+                
+                            
+                        
+                      
+   
+function getCandidateDigits(board, index) {
+  if (board[index] !== EMPTY) return [];
+  let mask = ALL_CANDIDATES;
+  const base = index * PEER_COUNT;
+  for (let k = 0; k < PEER_COUNT; k++) {
+    const v = board[PEER_TABLE[base + k]];
+    if (v !== EMPTY) mask &= ~(1 << (v - 1));
+  }
+  return maskToDigits(mask);
+}
+
+ 
+                
+                            
+                        
+                    
+   
+function getCandidateMask(board, index) {
+  if (board[index] !== EMPTY) return 0;
+  let mask = ALL_CANDIDATES;
+  const base = index * PEER_COUNT;
+  for (let k = 0; k < PEER_COUNT; k++) {
+    const v = board[PEER_TABLE[base + k]];
+    if (v !== EMPTY) mask &= ~(1 << (v - 1));
+  }
+  return mask;
+}
+
+                                                                     
+       
+                                                                        
+
+ 
+                            
+                                 
+                      
+   
+function getUnitCells(unitIndex) {
+  const out = new Array(SIZE);
+  for (let k = 0; k < SIZE; k++) out[k] = UNIT_TABLE[unitIndex * SIZE + k];
+  return out;
+}
+
+ 
+                                 
+                        
+                                      
+   
+function getCellUnits(index) {
+  const r = (index / SIZE) | 0;
+  const c = index % SIZE;
+  return [r, SIZE + c, 18 + ((r / BOX_SIZE) | 0) * BOX_SIZE + ((c / BOX_SIZE) | 0)];
+}
+
+ 
+                  
+                        
+                      
+   
+function getBoxCells(index) {
+  return getUnitCells(18 + (((index / SIZE) | 0) / BOX_SIZE | 0) * BOX_SIZE + ((index % SIZE) / BOX_SIZE | 0));
+}
+
+                                                                     
+                      
+  
+                                        
+                                                    
+                                                                        
+
+ 
+                                
+                                             
+                                                                          
+                                                   
+                                              
+                                                     
+                                          
+                               
+   
+
+ 
+          
+                                                                                                             
+                         
+   
+function createPuzzleState(params) {
+  const givens = typeof params.givens === 'string' ? boardFromString(params.givens) : cloneBoard(params.givens);
+  const solution =
+    params.solution == null
+      ? null
+      : typeof params.solution === 'string'
+        ? boardFromString(params.solution)
+        : cloneBoard(params.solution);
+
+  const values = cloneBoard(givens);
+  const status = new Uint8Array(CELLS);
+  for (let i = 0; i < CELLS; i++) status[i] = givens[i] !== EMPTY ? CELL_GIVEN : CELL_EMPTY;
+
+  return {
+    values,
+    status,
+    notes: new Int16Array(CELLS),
+    givens,
+    solution,
+    difficulty: params.difficulty ?? null,
+    createdAt: now(),
+  };
+}
+
+                                                   
+function cloneState(state) {
+  return {
+    // 2026-10-22：与 cloneBoard 同一条修复——从存档重建的 state 里，
+    // values/status/notes 可能是普通 Array（JSON 无 TypedArray），
+    // 直接 `%TypedArray%.prototype.slice.call` 会抛 TypeError。
+    values: state.values instanceof Uint8Array ? state.values.slice() : Uint8Array.from(state.values),
+    status: state.status instanceof Uint8Array ? state.status.slice() : Uint8Array.from(state.status),
+    notes: state.notes instanceof Int16Array ? state.notes.slice() : Int16Array.from(state.notes),
+    givens: state.givens,
+    solution: state.solution,
+    difficulty: state.difficulty,
+    createdAt: state.createdAt,
+  };
+}
+
+ 
+             
+                             
+                        
+                                                                                                                              
+   
+function getCell(state, index) {
+  return {
+    index,
+    row: (index / SIZE) | 0,
+    col: index % SIZE,
+    value: state.values[index],
+    status: state.status[index],
+    isGiven: state.status[index] === CELL_GIVEN,
+    isEmpty: state.values[index] === EMPTY,
+    notes: maskToDigits(state.notes[index]),
+  };
+}
+
+ 
+                         
+                             
+                        
+                            
+                                                                        
+   
+function setUserValue(state, index, value) {
+  if (index < 0 || index >= CELLS) return { state, accepted: false, reason: 'index-out-of-range' };
+  if (state.status[index] === CELL_GIVEN) return { state, accepted: false, reason: 'cell-is-given' };
+  if (value !== EMPTY && !isValidPlacement(state.values, index, value)) {
+    return { state, accepted: false, reason: 'conflict' };
+  }
+  const next = cloneState(state);
+  next.values[index] = value;
+  next.status[index] = value === EMPTY ? CELL_EMPTY : CELL_USER;
+  next.notes[index] = 0;          
+  return { state: next, accepted: true };
+}
+
+ 
+                  
+                             
+                        
+                            
+                         
+   
+function toggleNote(state, index, digit) {
+  if (state.status[index] === CELL_GIVEN) return state;
+  if (state.values[index] !== EMPTY) return state;               
+  if (digit < 1 || digit > SIZE) return state;
+  const next = cloneState(state);
+  next.notes[index] ^= 1 << (digit - 1);
+  if (next.notes[index] === 0) next.status[index] = CELL_EMPTY;
+  return next;
+}
+
+ 
+              
+                             
+                        
+                           
+                         
+   
+function setNotes(state, index, digits) {
+  if (state.status[index] === CELL_GIVEN || state.values[index] !== EMPTY) return state;
+  const next = cloneState(state);
+  next.notes[index] = digitsToMask(digits);
+  return next;
+}
+
+ 
+                          
+                             
+                        
+                                      
+                         
+   
+function refreshNotes(state, index, exclude = []) {
+  if (state.status[index] === CELL_GIVEN || state.values[index] !== EMPTY) return state;
+  const next = cloneState(state);
+  let mask = getCandidateMask(state.values, index);
+  for (const d of exclude) mask &= ~(1 << (d - 1));
+  next.notes[index] = mask;
+  return next;
+}
+
+ 
+                
+                             
+                        
+                         
+   
+function clearCell(state, index) {
+  if (state.status[index] === CELL_GIVEN) return state;
+  const next = cloneState(state);
+  next.values[index] = EMPTY;
+  next.notes[index] =0;
+  next.status[index] = CELL_EMPTY;
+  return next;
+}
+
+ 
+                  
+                             
+                         
+   
+function resetPlayerEntries(state) {
+  const next = cloneState(state);
+  for (let i = 0; i < CELLS; i++) {
+    if (next.status[i] === CELL_GIVEN) continue;
+    next.values[i] = EMPTY;
+    next.notes[i] = 0;
+    next.status[i] = CELL_EMPTY;
+  }
+  return next;
+}
+
+ 
+                             
+                             
+                                                                     
+   
+function snapshot(state) {
+  return {
+    values: Array.from(state.values),
+    status: Array.from(state.status),
+    notes: Array.from(state.notes),
+  };
+}
+
+ 
+                                    
+                             
+                                                                                                   
+                         
+   
+function restore(state, snap) {
+  state.values.set(snap.values);
+  state.status.set(snap.status);
+  state.notes.set(snap.notes);
+  return state;
+}
+
+ 
+            
+                             
+                                                                      
+                                                                              
+   
+function getProgress(state) {
+  let filled = 0;
+  let given = 0;
+  let user = 0;
+  let correct = 0;
+  let wrong = 0;
+  for (let i = 0; i < CELLS; i++) {
+    if (state.status[i] === CELL_GIVEN) {
+      given++;
+      filled++;
+      if (state.solution && state.values[i] === state.solution[i]) correct++;
+      continue;
+    }
+    const v = state.values[i];
+    if (v === EMPTY) continue;
+    user++;
+    filled++;
+    if (state.solution) {
+      if (v === state.solution[i]) correct++;
+      else wrong++;
+    }
+  }
+  return {
+    filled,
+    total: CELLS,
+    given,
+    user,
+    correct,
+    wrong,
+    percent: Math.round((filled / CELLS) * 100),
+    solved: filled === CELLS && (state.solution ? wrong === 0 : getConflicts(state.values).length === 0),
+  };
+}
+
+ 
+                          
+                             
+                     
+   
+function isSolved(state) {
+  return getProgress(state).solved;
+}
+
+ 
+                         
+                             
+                      
+   
+function getMistakes(state) {
+  if (!state.solution) return [];
+  const out = [];
+  for (let i = 0; i < CELLS; i++) {
+    if (state.status[i] === CELL_GIVEN) continue;
+    if (state.values[i] !== EMPTY && state.values[i] !== state.solution[i]) out.push(i);
+  }
+  return out;
+}
+
+                                           
+function getStateConflicts(state) {
+  return getConflicts(state.values);
+}
+
+return { SIZE, CELLS, BOX_SIZE, UNIT_COUNT, EMPTY, CELL_EMPTY, CELL_GIVEN, CELL_USER, UNIT_ROW, UNIT_COL, UNIT_BOX, ALL_CANDIDATES, PEER_COUNT, PEERS, UNITS, POPCOUNT, rowOf, colOf, boxOf, indexOf, bitCount, singleDigit, maskToDigits, digitsToMask, nowMs, createEmptyBoard, cloneBoard, boardFromString, boardToString, boardFromGrid, countFilled, countEmpty, isValidPlacement, getConflicts, validateBoard, countGivens, computeCandidates, getCandidateDigits, getCandidateMask, getUnitCells, getCellUnits, getBoxCells, createPuzzleState, getCell, setUserValue, toggleNote, setNotes, refreshNotes, clearCell, resetPlayerEntries, snapshot, restore, getProgress, isSolved, getMistakes, getStateConflicts };
+});
+__def("sudoku-solver.js", function (__req) {
+ 
+                                
+  
+                                                             
+  
+                                                   
+                                                      
+                   
+                                                
+                                                                     
+                                                                  
+                                        
+                                                       
+                     
+  
+                 
+                                            
+                               
+  
+         
+                                                  
+                                                    
+                                                               
+                                        
+  
+          
+                                                              
+                                          
+  
+                        
+   
+
+const { CELLS, SIZE, UNIT_COUNT, UNITS, PEERS, PEER_COUNT, POPCOUNT, ALL_CANDIDATES, EMPTY, nowMs } = __req("sudoku-core.js");
+
+              
+const BIT =               (() => {
+  const t = new Int32Array(SIZE + 1);
+  for (let d = 1; d <= SIZE; d++) t[d] = 1 << (d - 1);
+  return t;
+})();
+
+                           
+function lowestDigit(mask) {
+  for (let d = 1; d <= SIZE; d++) if (mask & BIT[d]) return d;
+  return 0;
+}
+
+                                       
+function parseBoardString(str) {
+  const cleaned = str.replace(/[\r\n\t ]/g, '');
+  if (cleaned.length !== CELLS) {
+    throw new RangeError(`盘面字符串长度必须为 ${CELLS}，实际 ${cleaned.length}`);
+  }
+  const board = new Uint8Array(CELLS);
+  for (let i = 0; i < CELLS; i++) {
+    const ch = cleaned[i];
+    if (ch >= '1' && ch <= '9') board[i] = ch.charCodeAt(0) - 48;
+    else if (ch === '0' || ch === '.' || ch === '-') board[i] = 0;
+    else throw new TypeError(`盘面字符串含非法字符 "${ch}" @ 位置 ${i}`);
+  }
+  return board;
+}
+
+                                              
+function toBoard(board) {
+  return typeof board === 'string' ? parseBoardString(board) : board;
+}
+
+ 
+                                        
+   
+function createWorkspace() {
+  return {
+    values: new Uint8Array(CELLS),
+    candidates: new Int16Array(CELLS),
+                          
+    pendingCells: new Int32Array(CELLS * 4),
+    pendingCellCount: 0,
+                                                            
+    pendingUnits: new Int32Array(UNIT_COUNT * SIZE * 4),
+    pendingUnitCount: 0,
+                                 
+    unitQueued: new Uint8Array(UNIT_COUNT * SIZE),
+                      
+    snapValues: [],
+    snapCandidates: [],
+    depth: 0,
+    stats: {
+      nodes: 0,
+      propagations: 0,
+      assignments: 0,
+      hiddenSingles: 0,
+      nakedSingles: 0,
+      maxDepth: 0,
+    },
+  };
+}
+
+                          
+function cellUnits(index) {
+  const r = (index / SIZE) | 0;
+  const c = index % SIZE;
+  return [r, SIZE + c, 18 + ((r / 3) | 0) * 3 + ((c / 3) | 0)];
+}
+
+ 
+                                
+                                              
+   
+function initialize(ws, board) {
+  const { values, candidates } = ws;
+  for (let i = 0; i < CELLS; i++) candidates[i] = ALL_CANDIDATES;
+
+  for (let i = 0; i < CELLS; i++) {
+    const v = board[i];
+    if (v === EMPTY) continue;
+    const bit = BIT[v];
+    const base = i * PEER_COUNT;
+                          
+    for (let k = 0; k < PEER_COUNT; k++) {
+      if (values[PEERS[base + k]] === v) return false;
+    }
+    values[i] = v;
+    for (let k = 0; k < PEER_COUNT; k++) {
+      const p = PEERS[base + k];
+      if (values[p] === EMPTY) {
+        candidates[p] &= ~bit;
+        if (candidates[p] === 0) return false;              
+      }
+    }
+  }
+
+                                                              
+  ws.pendingCellCount = 0;
+  ws.pendingUnitCount = 0;
+  ws.unitQueued.fill(0);
+  for (let i = 0; i < CELLS; i++) {
+    if (values[i] === EMPTY) {
+      ws.pendingCells[ws.pendingCellCount++] = i;
+      const [ur, uc, ub] = cellUnits(i);
+      for (const u of [ur, uc, ub]) {
+        const k = u * SIZE;
+        if (ws.unitQueued[k] === 0) {
+          ws.unitQueued[k] = 1;
+          ws.pendingUnits[ws.pendingUnitCount++] = k;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+             
+function pushCell(ws, index) {
+  ws.pendingCells[ws.pendingCellCount++] = index;
+}
+
+                                          
+function pushUnit(ws, unitBase) {
+  if (ws.unitQueued[unitBase] === 0) {
+    ws.unitQueued[unitBase] = 1;
+    ws.pendingUnits[ws.pendingUnitCount++] = unitBase;
+  }
+}
+
+                   
+function clearPending(ws) {
+  for (let k = 0; k < ws.pendingUnitCount; k++) ws.unitQueued[ws.pendingUnits[k]] = 0;
+  ws.pendingCellCount = 0;
+  ws.pendingUnitCount = 0;
+}
+
+ 
+                                           
+                                  
+   
+function assign(ws, index, digit) {
+  const { values, candidates, stats } = ws;
+  const bit = BIT[digit];
+
+  if (values[index] === digit) return true;      
+  if (values[index] !== EMPTY) return false;            
+  if (!(candidates[index] & bit)) return false;         
+
+  values[index] = digit;
+  candidates[index] = bit;
+  stats.assignments++;
+
+  const base = index * PEER_COUNT;
+  for (let k = 0; k < PEER_COUNT; k++) {
+    const p = PEERS[base + k];
+    if (values[p] === digit) return false;           
+    if (values[p] === EMPTY && candidates[p] & bit) {
+      candidates[p] &= ~bit;
+      if (candidates[p] === 0) return false;              
+      pushCell(ws, p);
+      const [ur, uc, ub] = cellUnits(p);
+      pushUnit(ws, ur * SIZE + (digit - 1));
+      pushUnit(ws, uc * SIZE + (digit - 1));
+      pushUnit(ws, ub * SIZE + (digit - 1));
+    }
+  }
+  return true;
+}
+
+ 
+            
+                                  
+   
+function propagate(ws) {
+  const { values, candidates, stats } = ws;
+
+  while (ws.pendingCellCount > 0 || ws.pendingUnitCount > 0) {
+                                
+    while (ws.pendingCellCount > 0) {
+      const i = ws.pendingCells[--ws.pendingCellCount];
+      if (values[i] !== EMPTY) continue;
+      const cnt = POPCOUNT[candidates[i] & 0x1ff];
+      if (cnt === 0) return false;
+      if (cnt === 1) {
+        stats.propagations++;
+        stats.nakedSingles++;
+        if (!assign(ws, i, lowestDigit(candidates[i]))) return false;
+      }
+    }
+
+                                          
+    while (ws.pendingUnitCount > 0) {
+      const code = ws.pendingUnits[--ws.pendingUnitCount];
+      ws.unitQueued[code] = 0;
+      const u = (code / SIZE) | 0;
+      const bit = BIT[(code % SIZE) + 1];
+      const ubase = u * SIZE;
+
+                    
+      let placed = false;
+      for (let k = 0; k < SIZE; k++) {
+        if (values[UNITS[ubase + k]] === ((code % SIZE) + 1)) {
+          placed = true;
+          break;
+        }
+      }
+      if (placed) continue;
+
+                   
+      let count = 0;
+      let spot = -1;
+      for (let k = 0; k < SIZE; k++) {
+        const i = UNITS[ubase + k];
+        if (values[i] === EMPTY && candidates[i] & bit) {
+          count++;
+          spot = i;
+          if (count > 1) break;
+        }
+      }
+      if (count === 0) return false;                     
+      if (count === 1) {
+        stats.propagations++;
+        stats.hiddenSingles++;
+        if (!assign(ws, spot, (code % SIZE) + 1)) return false;
+      }
+    }
+  }
+  return true;
+}
+
+                                                    
+function selectMRVCell(ws) {
+  const { values, candidates } = ws;
+  let best = -1;
+  let bestCount = 10;
+  for (let i = 0; i < CELLS; i++) {
+    if (values[i] !== EMPTY) continue;
+    const c = POPCOUNT[candidates[i] & 0x1ff];
+    if (c < bestCount) {
+      bestCount = c;
+      best = i;
+      if (c <= 1) break;                   
+    }
+  }
+  return best;
+}
+
+            
+function isFilled(ws) {
+  const { values } = ws;
+  for (let i = 0; i < CELLS; i++) if (values[i] === EMPTY) return false;
+  return true;
+}
+
+ 
+                    
+                         
+                                                                            
+                                    
+   
+function search(ws, onSolution) {
+  const { stats } = ws;
+
+  if (!propagate(ws)) return false;
+
+  if (isFilled(ws)) return onSolution(ws.values);
+
+  const cell = selectMRVCell(ws);
+  if (cell < 0) return false;         
+
+              
+  const depth = ws.depth;
+  if (ws.snapValues[depth] === undefined) {
+    ws.snapValues[depth] = new Uint8Array(CELLS);
+    ws.snapCandidates[depth] = new Int16Array(CELLS);
+  }
+  const savedValues = ws.snapValues[depth];
+  const savedCandidates = ws.snapCandidates[depth];
+  savedValues.set(ws.values);
+  savedCandidates.set(ws.candidates);
+  ws.depth = depth + 1;
+
+  stats.nodes++;
+  if (depth + 1 > stats.maxDepth) stats.maxDepth = depth + 1;
+
+                                         
+  const mask = ws.candidates[cell] & 0x1ff;
+  let stop = false;
+
+  for (let d = 1; d <= SIZE && !stop; d++) {
+    if (!(mask & BIT[d])) continue;
+
+               
+    ws.values.set(savedValues);
+    ws.candidates.set(savedCandidates);
+    clearPending(ws);
+
+    if (!assign(ws, cell, d)) continue;
+    if (search(ws, onSolution)) stop = true;
+  }
+
+  if (!stop) {
+                  
+    ws.values.set(savedValues);
+    ws.candidates.set(savedCandidates);
+    clearPending(ws);
+  }
+
+  ws.depth = depth;
+  return stop;
+}
+
+ 
+        
+  
+                                                                                
+                                                                     
+                                                                            
+                                                                                   
+                                                                                          
+                        
+                                              
+                                             
+                                                               
+                                                        
+                                                                                         
+                          
+   
+function solve(board, options = {}) {
+  const t0 = nowMs();
+  const b = toBoard(board);
+  const ws = createWorkspace();
+  const maxSolutions = options.maxSolutions ?? (options.collectAll ? Infinity : 2);
+  const solutions = [];
+  let firstSolution = null;
+  let solved = false;
+
+  if (initialize(ws, b)) {
+                                                            
+                                       
+    search(ws, (values) => {
+      const copy = Uint8Array.prototype.slice.call(values);
+      if (firstSolution === null) firstSolution = copy;
+      if (solutions.length < maxSolutions) solutions.push(copy);
+      return solutions.length >= maxSolutions;             
+    });
+    solved = firstSolution !== null;
+  }
+
+  const elapsedMs = nowMs() - t0;
+  const solutionCount = solutions.length;
+  return {
+    solved,
+    solution: firstSolution,
+    solutions,
+    solutionCount,
+    capped: solutionCount >= maxSolutions,
+    unique: solutionCount === 1,
+    stats: { ...ws.stats },
+    elapsedMs,
+  };
+}
+
+ 
+                                         
+  
+                         
+                                   
+                                                               
+                                                                                                   
+                                       
+                               
+                          
+   
+function countSolutions(board, limit = 2) {
+  const t0 = nowMs();
+  const b = toBoard(board);
+  const ws = createWorkspace();
+  let count = 0;
+  let capped = false;
+
+  if (initialize(ws, b)) {
+    search(ws, () => {
+      count++;
+      if (count >= limit) {
+        capped = true;
+        return true;      
+      }
+      return false;
+    });
+  }
+
+  return {
+    count,
+    capped,
+    unique: count === 1,
+    stats: { ...ws.stats },
+    elapsedMs: nowMs() - t0,
+  };
+}
+
+ 
+             
+                                   
+                                                                   
+   
+function hasUniqueSolution(board) {
+  const r = countSolutions(board, 2);
+  return { unique: r.count === 1, count: r.count, elapsedMs: r.elapsedMs };
+}
+
+ 
+                             
+                                   
+                         
+   
+function solveToString(board) {
+  const r = solve(board);
+  if (!r.solution) return null;
+  let s = '';
+  for (let i = 0; i < CELLS; i++) s += String(r.solution[i]);
+  return s;
+}
+
+return { solve, countSolutions, hasUniqueSolution, solveToString };
+});
+__def("sudoku-difficulty.js", function (__req) {
+ 
+                               
+  
+          
+                                                 
+                                            
+                              
+  
+          
+                                                           
+                               
+  
+                                                         
+                                                      
+                                                 
+                                              
+                                     
+                                               
+                                         
+                                    
+  
+                                                                    
+  
+                 
+                                      
+                                                    
+                                          
+                                      
+                                
+                          
+  
+                                        
+                                       
+                                        
+  
+               
+                                         
+                                                    
+                                      
+                                         
+                                       
+  
+                            
+   
+
+const { CELLS, SIZE, UNIT_COUNT, UNITS, EMPTY, computeCandidates, bitCount, nowMs } = __req("sudoku-core.js");
+const { countSolutions } = __req("sudoku-solver.js");
+
+ 
+               
+  
+                                       
+                                                        
+                                                                     
+                                                                        
+                         
+                                      
+                                      
+                           
+                             
+                                      
+  
+                                
+                                               
+                                                                     
+                                              
+                                                   
+                                             
+                                                   
+                                                      
+   
+const DIFFICULTY_BANDS = Object.freeze([
+  { id: 'starter', label: '入门', min: 0, max: 21 },
+  { id: 'easy', label: '简单', min: 21, max: 38 },
+  { id: 'medium', label: '中等', min: 38, max: 50 },
+  { id: 'hard', label: '困难', min: 50, max: 79 },
+  { id: 'expert', label: '专家', min: 79, max: 95 },
+  { id: 'master', label: '大师', min: 95, max: 100 },
+]);
+
+                    
+function clamp01(x) {
+  return x < 0 ? 0 : x > 1 ? 1 : x;
+}
+
+ 
+                  
+  
+                               
+                                                                                    
+  
+                                                                      
+  
+                                                 
+                                                      
+                                             
+                                 
+                                       
+                                      
+                                           
+  
+                                      
+                                                
+                                       
+  
+                                                            
+                                             
+                                                         
+   
+const WEIGHTS = Object.freeze({
+  holes: 0.2,
+  technique: 0.4,
+  branching: 0.4,
+});
+
+ 
+                      
+                   
+                            
+                                  
+   
+function computeBoxSpread(board) {
+  const counts = new Int32Array(9);
+  for (let b = 0; b < 9; b++) {
+    const base = (18 + b) * SIZE;
+    let holes = 0;
+    for (let k = 0; k < SIZE; k++) if (board[UNITS[base + k]] === EMPTY) holes++;
+    counts[b] = holes;
+  }
+                                      
+  const mean = (counts[0] + counts[1] + counts[2] + counts[3] + counts[4] + counts[5] + counts[6] + counts[7] + counts[8]) / 9;
+  let acc = 0;
+  for (let b = 0; b < 9; b++) acc += (counts[b] - mean) ** 2;
+  return Math.sqrt(acc / 9) / SIZE;
+}
+
+ 
+               
+  
+                                                                 
+                                                               
+                                             
+                              
+              
+                                                                        
+                                                                                 
+                                                                                         
+                      
+     
+   
+function evaluateDifficulty(board, options = {}) {
+  const t0 = nowMs();
+  const b = typeof board === 'string' ? parseBoardString(board) : board;
+  const checkUnique = options.checkUnique !== false;
+
+         
+  let holes = 0;
+  for (let i = 0; i < CELLS; i++) if (b[i] === EMPTY) holes++;
+  const given = CELLS - holes;
+
+               
+  const spread = computeBoxSpread(b);
+
+                                  
+  const cands = computeCandidates(b);
+  let candSum = 0;
+  for (let i = 0; i < CELLS; i++) candSum += bitCount(cands[i]);
+  const avgCandidates = holes > 0 ? candSum / holes : 0;
+
+                                  
+  let nodes = 0;
+  let propagations = 0;
+  let solutionCount = 0;
+  let unique = true;
+  if (checkUnique) {
+    const r = countSolutions(b, options.level ?? 2);
+    nodes = r.stats.nodes;
+    propagations = r.stats.propagations;
+    solutionCount = r.count;
+    unique = r.count === 1;
+  } else {
+                                   
+    const r = countSolutions(b, 1);
+    nodes = r.stats.nodes;
+    propagations = r.stats.propagations;
+    solutionCount = r.count;
+    unique = r.count === 1;
+  }
+
+                                  
+                                                 
+  const nHoles = clamp01((holes - 26) / 30);
+
+                                          
+                                             
+                                                        
+                               
+                              
+                            
+                               
+                                           
+                                                      
+                                       
+  const nTechnique =
+    nodes === 0 ? 0 : nodes <= 2 ? 0.25 : nodes <= 7 ? 0.5 : nodes <= 20 ? 0.75 : 1;
+
+                                        
+                                                                 
+                               
+  const nBranching = clamp01((avgCandidates - 1.3) / 2.9);
+
+                                                
+                                          
+                                               
+  const denom = propagations + nodes;
+  const ratio = denom > 0 ? propagations / denom : 1;
+
+                                        
+  const nSpread = clamp01(spread / 0.15);
+
+                     
+  const raw =
+    WEIGHTS.holes * nHoles +
+    WEIGHTS.technique * nTechnique +
+    WEIGHTS.branching * nBranching;
+
+                                   
+  const score = Math.round(clamp01(unique ? raw : Math.min(raw, 0.6)) * 100);
+  const band = bandOf(score);
+
+  return {
+    holes,
+    given,
+    technique: Number(nTechnique.toFixed(4)),
+    branching: Number(nBranching.toFixed(4)),
+                                  
+                                                     
+    propagation: Number(ratio.toFixed(4)),
+    spread: Number(nSpread.toFixed(4)),
+    avgCandidates: Number(avgCandidates.toFixed(3)),
+    nodes,
+    propagations,
+    unique,
+    solutionCount,
+    score,
+    band: band.id,
+    bandLabel: band.label,
+    elapsedMs: nowMs() - t0,
+  };
+}
+
+ 
+              
+                              
+                                                                          
+   
+function bandOf(score) {
+  const s = clamp01(score / 100) * 100;
+  for (const band of DIFFICULTY_BANDS) {
+    if (s < band.max) return band;
+  }
+  return DIFFICULTY_BANDS[DIFFICULTY_BANDS.length - 1];
+}
+
+ 
+             
+                                   
+                                                 
+                                                                     
+   
+function difficultyBandOf(board, options = {}) {
+  return bandOf(evaluateDifficulty(board, options).score);
+}
+
+                               
+function parseBoardString(str) {
+  const cleaned = str.replace(/[\r\n\t ]/g, '');
+  if (cleaned.length !== CELLS) {
+    throw new RangeError(`盘面字符串长度必须为 ${CELLS}，实际 ${cleaned.length}`);
+  }
+  const board = new Uint8Array(CELLS);
+  for (let i = 0; i < CELLS; i++) {
+    const ch = cleaned[i];
+    if (ch >= '1' && ch <= '9') board[i] = ch.charCodeAt(0) - 48;
+    else if (ch === '0' || ch === '.' || ch === '-') board[i] = 0;
+    else throw new TypeError(`盘面字符串含非法字符 "${ch}" @ 位置 ${i}`);
+  }
+  return board;
+}
+
+return { DIFFICULTY_BANDS, computeBoxSpread, evaluateDifficulty, bandOf, difficultyBandOf };
+});
+__def("sudoku-generator.js", function (__req) {
+ 
+                               
+  
+                 
+                                    
+  
+                        
+                                         
+                                                             
+                                                
+                                              
+                      
+  
+                  
+                                       
+                         
+                                        
+                                                 
+  
+           
+                                            
+                                
+                                   
+                                     
+  
+          
+                                
+                                
+                                                              
+                                               
+  
+         
+                        
+                                                
+                                        
+                                                            
+                                   
+  
+             
+                                          
+                        
+                              
+                                    
+                                                           
+  
+                           
+   
+
+const { CELLS, SIZE, UNIT_COUNT, UNITS, PEERS, PEER_COUNT, EMPTY, createEmptyBoard, cloneBoard, countEmpty, nowMs } = __req("sudoku-core.js");
+const { countSolutions } = __req("sudoku-solver.js");
+const { evaluateDifficulty, bandOf, DIFFICULTY_BANDS } = __req("sudoku-difficulty.js");
+
+ 
+                            
+                           
+                                              
+   
+const BASE_SOLUTION =               Uint8Array.from([
+  5, 3, 4, 6, 7, 8, 9, 1, 2,
+  6, 7, 2, 1, 9, 5, 3, 4, 8,
+  1, 9, 8, 3, 4, 2, 5, 6, 7,
+  8, 5, 9, 7, 6, 1, 4, 2, 3,
+  4, 2, 6, 8, 5, 3, 7, 9, 1,
+  7, 1, 3, 9, 2, 4, 8, 5, 6,
+  9, 6, 1, 5, 3, 7, 2, 8, 4,
+  2, 8, 7, 4, 1, 9, 6, 3, 5,
+  3, 4, 5, 2, 8, 6, 1, 7, 9,
+]);
+
+                                            
+function assertBaseSolution() {
+  for (let u = 0; u < UNIT_COUNT; u++) {
+    const seen = new Uint8Array(SIZE + 1);
+    for (let k = 0; k < SIZE; k++) {
+      const v = BASE_SOLUTION[UNITS[u * SIZE + k]];
+      if (v < 1 || v > SIZE || seen[v]) {
+        throw new Error('sudoku-generator: 内部基准终盘非法（单元 ' + u + '）');
+      }
+      seen[v] = 1;
+    }
+  }
+}
+assertBaseSolution();
+
+                                                                     
+                       
+                                                                        
+
+ 
+                                                
+                                           
+  
+                                     
+                                          
+   
+function createRng(seed) {
+  let a = (seed === undefined ? Date.now() ^ (performance?.now?.() * 1000) : seed) >>> 0;
+  return function rng() {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+ 
+                
+                                                     
+                                      
+                    
+   
+ 
+                    
+  
+                                           
+                     
+                                          
+                       
+  
+                              
+                                                                            
+   
+function findBand(level) {
+  for (const b of DIFFICULTY_BANDS) {
+    if (b.id === level) return b;
+  }
+  return null;
+}
+
+function isPlainOptions(v) {
+  return v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Uint8Array);
+}
+
+ 
+                                   
+                                        
+                               
+                                                 
+   
+function assertGeneratorOptions(fnName, options, keys) {
+  if (typeof options === 'string' || typeof options === 'number') {
+    throw new TypeError(
+      `${fnName} 接收选项对象，不接收位置参数。` +
+      `正确用法：${fnName}({ ${keys.join(', ')} })；` +
+      `收到 ${typeof options} "${options}"。` +
+      '注意：错误调用不会报错而是静默降级，故此处主动抛出。'
+    );
+  }
+  if (!isPlainOptions(options)) {
+    throw new TypeError(`${fnName} 的参数必须是选项对象，收到 ${Object.prototype.toString.call(options)}。`);
+  }
+}
+
+                        
+function shuffle(arr, rng) {  for (let i = arr.length - 1; i > 0; i--) {
+    const j = (rng() * (i + 1)) | 0;
+    const t = arr[i];
+    arr[i] = arr[j];
+    arr[j] = t;
+  }
+  return arr;
+}
+
+                                            
+const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+                               
+const BAND3 = [0, 1, 2];
+                                               
+const SCRATCH = new Uint8Array(CELLS);
+
+                                                                     
+              
+  
+                                       
+  
+                                                    
+                                          
+                                                      
+                                  
+                                                         
+                     
+                                                
+  
+                                                     
+                                         
+                   
+  
+                                  
+                            
+                                                                        
+
+ 
+              
+  
+                                              
+                                                      
+   
+function generateSolvedBoard(rng) {
+  const b = cloneBoard(BASE_SOLUTION);
+                                       
+                   
+  const t = SCRATCH;
+
+             
+  const perm = shuffle(DIGITS.slice(), rng);
+  for (let i = 0; i < CELLS; i++) b[i] = perm[b[i] - 1];
+
+                                              
+  {
+    const order = shuffle(BAND3.slice(), rng);
+    t.set(b);
+    for (let k = 0; k < 3; k++) {
+      const src = order[k] * 3 * SIZE;
+      const dst = k * 3 * SIZE;
+      for (let i = 0; i < 3 * SIZE; i++) b[dst + i] = t[src + i];
+    }
+  }
+
+                            
+  for (let br = 0; br < SIZE; br += 3) {
+    const order = shuffle(BAND3.slice(), rng);
+    t.set(b);
+    for (let k = 0; k < 3; k++) {
+      const src = (br + k) * SIZE;
+      const dst = (br + order[k]) * SIZE;
+      for (let c = 0; c < SIZE; c++) b[dst + c] = t[src + c];
+    }
+  }
+
+                                              
+  {
+    const order = shuffle(BAND3.slice(), rng);
+    t.set(b);
+    for (let k = 0; k < 3; k++) {
+      const src = order[k] * 3;
+      const dst = k * 3;
+      for (let r = 0; r < SIZE; r++) {
+        b[r * SIZE + dst] = t[r * SIZE + src];
+        b[r * SIZE + dst + 1] = t[r * SIZE + src + 1];
+        b[r * SIZE + dst + 2] = t[r * SIZE + src + 2];
+      }
+    }
+  }
+
+                            
+  for (let bc = 0; bc < SIZE; bc += 3) {
+    const order = shuffle(BAND3.slice(), rng);
+    t.set(b);
+    for (let k = 0; k < 3; k++) {
+      const src = bc + k;
+      const dst = bc + order[k];
+      for (let r = 0; r < SIZE; r++) b[r * SIZE + dst] = t[r * SIZE + src];
+    }
+  }
+
+  return b;
+}
+
+                                                                     
+     
+                                                                        
+
+ 
+                         
+  
+                                          
+                   
+  
+                                    
+            
+                                               
+                                                                  
+                        
+                                                                
+                                                  
+               
+              
+                                                                           
+                                                                                       
+                      
+     
+   
+function digHoles(solution, options = {}) {
+  if (arguments.length > 1 && !isPlainOptions(options)) {
+    throw new TypeError(
+      'digHoles(solution, options) 第二个参数必须是选项对象。' +
+      '注意：目标洞数通过 options.targetHoles 传入，不是位置参数。'
+    );
+  }
+  const t0 = nowMs();
+  const rng = options.rng ?? createRng();
+  const targetHoles = options.targetHoles ?? 45;
+  const checkUnique = options.checkUnique !== false;
+  const difficultyCeiling = options.difficultyCeiling ?? null;
+
+  const puzzle = cloneBoard(solution);
+  let holes = 0;
+  let attempts = 0;
+  let accepted = 0;
+  let rejected = 0;
+  let stoppedBy = 'exhausted';
+
+                                         
+  const pairs = [];
+  for (let i = 0; i < 40; i++) pairs.push([i, 80 - i]);
+
+             
+  shuffle(pairs, rng);
+
+  let scoreChecks = 0;
+  const maxScoreChecks = options.maxScoreChecks ?? 3;
+
+   
+            
+    
+                        
+                                                                
+                                                   
+                                                                  
+                                                          
+                                                         
+    
+                                                  
+                                                    
+                          
+     
+  const checkCeiling = (h) => {
+    if (difficultyCeiling === null || h <= 0) return false;
+                                     
+    const due = scoreChecks < maxScoreChecks ? true : attempts % 12 === 0;
+    if (!due) return false;
+    scoreChecks++;
+    return evaluateDifficulty(puzzle, { checkUnique: false }).score >= difficultyCeiling;
+  };
+
+                                            
+  for (const [a, bIdx] of pairs) {
+    if (holes >= targetHoles) {
+      stoppedBy = 'target';
+      break;
+    }
+
+    if (attempts > 0 && checkCeiling(holes)) {
+      stoppedBy = 'ceiling';
+      break;
+    }
+
+             
+    const saveA = puzzle[a];
+    const saveB = puzzle[bIdx];
+    if (saveA === EMPTY && saveB === EMPTY) continue;        
+
+    puzzle[a] = EMPTY;
+    puzzle[bIdx] = EMPTY;
+    attempts++;
+
+    if (!checkUnique) {
+      holes += (saveA === EMPTY ? 0 : 1) + (saveB === EMPTY ? 0 : 1);
+      accepted++;
+      continue;
+    }
+
+                            
+    const r = countSolutions(puzzle, 2);
+    if (r.count === 1) {
+      accepted++;
+      holes += (saveA === EMPTY ? 0 : 1) + (saveB === EMPTY ? 0 : 1);
+    } else {
+      puzzle[a] = saveA;
+      puzzle[bIdx] = saveB;
+      rejected++;
+    }
+  }
+
+                                      
+    
+                                              
+                                          
+                                                     
+                            
+  if (holes < targetHoles && (options.symmetricOnly !== true)) {
+                        
+    const remaining = [];
+    for (let i = 0; i < CELLS; i++) if (puzzle[i] !== EMPTY) remaining.push(i);
+    shuffle(remaining, rng);
+
+    for (const i of remaining) {
+      if (holes >= targetHoles) {
+        stoppedBy = 'target';
+        break;
+      }
+                                
+      if (checkCeiling(holes)) {
+        stoppedBy = 'ceiling';
+        break;
+      }
+
+      const save = puzzle[i];
+      puzzle[i] = EMPTY;
+      attempts++;
+
+      if (!checkUnique) {
+        holes++;
+        accepted++;
+        continue;
+      }
+      const r = countSolutions(puzzle, 2);
+      if (r.count === 1) {
+        holes++;
+        accepted++;
+      } else {
+        puzzle[i] = save;
+        rejected++;
+      }
+    }
+  }
+
+                              
+  if (options.digCenter === true && holes < targetHoles) {
+    const center = 40;
+    if (puzzle[center] !== EMPTY) {
+      const save = puzzle[center];
+      puzzle[center] = EMPTY;
+      attempts++;
+      const r = checkUnique ? countSolutions(puzzle, 2) : { count: 1 };
+      if (r.count === 1) {
+        holes++;
+        accepted++;
+      } else {
+        puzzle[center] = save;
+        rejected++;
+      }
+    }
+  }
+
+  if (stoppedBy === 'exhausted' && holes >= targetHoles) stoppedBy = 'target';
+
+  return {
+    puzzle,
+    holes: countEmpty(puzzle),
+    attempts,
+    accepted,
+    rejected,
+    solution: cloneBoard(solution),
+    stoppedBy,
+    elapsedMs: nowMs() - t0,
+  };
+}
+
+                                                                     
+        
+                                                                        
+
+ 
+                             
+  
+                                              
+                                     
+                                                     
+                                                
+  
+                                            
+                                                           
+                                  
+  
+                                         
+                                                         
+                                      
+                                                                 
+                                      
+                                      
+                                       
+  
+                                                 
+                                          
+                                                        
+                                             
+                                                            
+  
+                                              
+                                        
+                              
+                                                    
+             
+  
+                                                
+                                            
+                                       
+                                                                         
+                                        
+                                                   
+                                             
+   
+const PRESETS = Object.freeze({
+  starter: { targetHoles: 32, ceiling: 19, tries: 4 },
+  easy: { targetHoles: 40, ceiling: 36, tries: 6 },
+  medium: { targetHoles: 45, ceiling: 49, tries: 16 },
+  hard: { targetHoles: 50, ceiling: 78, tries: 10 },
+  expert: { targetHoles: 54, ceiling: 94, tries: 12 },
+  master: { targetHoles: 58, ceiling: 99, tries: 10 },
+});
+
+ 
+           
+  
+                    
+                                     
+                                     
+                         
+  
+            
+                                                                     
+                                              
+                                                            
+                                                          
+                                                           
+                                                        
+                                                            
+               
+              
+                                                                             
+                                                    
+     
+                                                                            
+   
+function generatePuzzle(options = {}) {
+  assertGeneratorOptions('generatePuzzle', options, ['difficulty', 'seed']);
+  const level = options.difficulty ?? 'medium';
+  if (typeof level !== 'string' || !Object.prototype.hasOwnProperty.call(PRESETS, level)) {
+    throw new RangeError(
+      `generatePuzzle: 未知难度 "${level}"。合法值：` + Object.keys(PRESETS).join(' / ')
+    );
+  }
+  const preset = PRESETS[level];
+  const targetHoles = options.targetHoles ?? preset.targetHoles;
+  const difficultyCeiling =
+    options.difficultyCeiling !== undefined ? options.difficultyCeiling : preset.ceiling;
+  const tries = Math.max(1, options.tries ?? preset.tries);
+  const checkUnique = options.checkUnique !== false;
+
+  const seed = options.seed ?? ((Math.random() * 1e9) | 0);
+  const rng = options.rng ?? createRng(seed);
+
+  let best = null;
+
+                                  
+                                
+  const targetBand = PRESETS[level] ? findBand(level) : null;
+  const inBand = targetBand
+    ? (s) => s >= targetBand.min && s < targetBand.max
+    : () => false;
+
+  for (let t = 0; t < tries; t++) {
+                
+    const solution = generateSolvedBoard(rng);
+
+                      
+    const dug = digHoles(solution, {
+      targetHoles,
+      difficultyCeiling,
+      rng,
+      checkUnique,
+    });
+
+                                    
+    const difficulty = evaluateDifficulty(dug.puzzle, { checkUnique: true });
+
+    const candidate = {
+      puzzle: dug.puzzle,
+      solution: dug.solution,
+      holes: dug.holes,
+      givens: CELLS - dug.holes,
+      difficulty,
+      seed,
+      stats: {
+        tries: t + 1,
+        attempts: dug.attempts,
+        accepted: dug.accepted,
+        rejected: dug.rejected,
+        stoppedBy: dug.stoppedBy,
+        digMs: dug.elapsedMs,
+        totalMs: nowMs() - dug.elapsedMs,
+      },
+    };
+
+                                      
+      
+                                                       
+                                                      
+                                                
+                                        
+      
+                                       
+                                                
+                              
+      
+                                               
+    if (best === null) {
+      best = candidate;
+    } else {
+      const candIn = inBand(candidate.difficulty.score);
+      const bestIn = inBand(best.difficulty.score);
+      if (candIn !== bestIn) {
+        if (candIn) best = candidate;
+      } else if (candidate.difficulty.score > best.difficulty.score) {
+        best = candidate;
+      }
+    }
+                         
+    if (difficultyCeiling !== null && best.difficulty.score >= difficultyCeiling) break;
+  }
+
+  return best;
+}
+
+ 
+                                 
+                                                                                            
+                                                 
+   
+function generatePuzzles(options = {}) {
+  assertGeneratorOptions('generatePuzzles', options, ['count', 'seed']);
+  const count = options.count ?? 10;
+  const baseSeed = options.seed ?? ((Math.random() * 1e9) | 0);
+  const out = [];
+  for (let k = 0; k < count; k++) {
+                      
+    out.push(generatePuzzle({ ...options, seed: (baseSeed + k * 0x9e3779b9) >>> 0 }));
+  }
+  return out;
+}
+
+return { createRng, generateSolvedBoard, digHoles, PRESETS, generatePuzzle, generatePuzzles };
+});
+__def("index.js", function (__req) {
+ 
+                       
+  
+                                                               
+  
+          
+        
+                                                                                                    
+  
+             
+                                                                                     
+  
+               
+                                                                                                 
+  
+                                                           
+                                       
+                                   
+  
+            
+                                                                                      
+      
+  
+                        
+   
+
+                 
+const { SIZE: SIZE, CELLS: CELLS, BOX_SIZE: BOX_SIZE, UNIT_COUNT: UNIT_COUNT, EMPTY: EMPTY, CELL_EMPTY: CELL_EMPTY, CELL_GIVEN: CELL_GIVEN, CELL_USER: CELL_USER, UNIT_ROW: UNIT_ROW, UNIT_COL: UNIT_COL, UNIT_BOX: UNIT_BOX, ALL_CANDIDATES: ALL_CANDIDATES, PEER_COUNT: PEER_COUNT, PEERS: PEERS, UNITS: UNITS, POPCOUNT: POPCOUNT, nowMs: nowMs, rowOf: rowOf, colOf: colOf, boxOf: boxOf, indexOf: indexOf, bitCount: bitCount, singleDigit: singleDigit, maskToDigits: maskToDigits, digitsToMask: digitsToMask, createEmptyBoard: createEmptyBoard, cloneBoard: cloneBoard, boardFromString: boardFromString, boardToString: boardToString, boardFromGrid: boardFromGrid, countFilled: countFilled, countEmpty: countEmpty, countGivens: countGivens, isValidPlacement: isValidPlacement, getConflicts: getConflicts, validateBoard: validateBoard, computeCandidates: computeCandidates, getCandidateDigits: getCandidateDigits, getCandidateMask: getCandidateMask, getUnitCells: getUnitCells, getCellUnits: getCellUnits, getBoxCells: getBoxCells, createPuzzleState: createPuzzleState, getCell: getCell, setUserValue: setUserValue, toggleNote: toggleNote, setNotes: setNotes, refreshNotes: refreshNotes, clearCell: clearCell, resetPlayerEntries: resetPlayerEntries, snapshot: snapshot, restore: restore, getProgress: getProgress, isSolved: isSolved, getMistakes: getMistakes, getStateConflicts: getStateConflicts } = __req("sudoku-core.js");
+
+                
+const { solve: solve, countSolutions: countSolutions, hasUniqueSolution: hasUniqueSolution, solveToString: solveToString } = __req("sudoku-solver.js");
+
+              
+const { DIFFICULTY_BANDS: DIFFICULTY_BANDS, evaluateDifficulty: evaluateDifficulty, difficultyBandOf: difficultyBandOf, bandOf: bandOf, computeBoxSpread: computeBoxSpread } = __req("sudoku-difficulty.js");
+
+             
+const { PRESETS: PRESETS, createRng: createRng, generateSolvedBoard: generateSolvedBoard, digHoles: digHoles, generatePuzzle: generatePuzzle, generatePuzzles: generatePuzzles } = __req("sudoku-generator.js");
+
+return { SIZE, CELLS, BOX_SIZE, UNIT_COUNT, EMPTY, CELL_EMPTY, CELL_GIVEN, CELL_USER, UNIT_ROW, UNIT_COL, UNIT_BOX, ALL_CANDIDATES, PEER_COUNT, PEERS, UNITS, POPCOUNT, nowMs, rowOf, colOf, boxOf, indexOf, bitCount, singleDigit, maskToDigits, digitsToMask, createEmptyBoard, cloneBoard, boardFromString, boardToString, boardFromGrid, countFilled, countEmpty, countGivens, isValidPlacement, getConflicts, validateBoard, computeCandidates, getCandidateDigits, getCandidateMask, getUnitCells, getCellUnits, getBoxCells, createPuzzleState, getCell, setUserValue, toggleNote, setNotes, refreshNotes, clearCell, resetPlayerEntries, snapshot, restore, getProgress, isSolved, getMistakes, getStateConflicts, solve, countSolutions, hasUniqueSolution, solveToString, DIFFICULTY_BANDS, evaluateDifficulty, difficultyBandOf, bandOf, computeBoxSpread, PRESETS, createRng, generateSolvedBoard, digHoles, generatePuzzle, generatePuzzles };
+});
+
+__def("board.js", function (__req) {
+  
+                       
+   
+                    
+   
+                       
+                                              
+                                                
+                                              
+                                           
+   
+                     
+                                                  
+                               
+                 
+   
+                            
+                                                                      
+                                 
+   
+                                     
+                                                    
+                                                 
+                                       
+   
+                            
+                                                  
+                              
+   
+
+const { CELL_EMPTY, CELL_GIVEN, CELL_USER, SIZE, PEERS, PEER_COUNT, maskToDigits, rowOf, colOf } = __req("index.js");
+
+                                   
+const UNIT_MAP = buildUnitMap();
+
+function buildUnitMap() {
+                                                       
+                                           
+  const map = [];
+  for (let i = 0; i < 81; i++) {
+    const set = new Set([i]);
+    for (let k = 0; k < PEER_COUNT; k++) set.add(PEERS[i * PEER_COUNT + k]);
+    map.push(Int16Array.from(set));
+  }
+  return map;
+}
+
+  
+                                      
+   
+                                                                  
+                            
+                                     
+                              
+   
+function computeHighlight(values, selected, settings) {
+  const peers = new Set();
+  const same = new Set();
+  if (selected === null || selected === undefined || selected < 0) {
+    return { peers, same, value: 0 };
+  }
+  if (settings.highlightPeers !== false) {
+    for (const idx of UNIT_MAP[selected]) peers.add(idx);
+  }
+  const v = values[selected];
+  if (v !== 0 && settings.highlightSameDigit !== false) {
+    for (let i = 0; i < 81; i++) {
+      if (values[i] === v) same.add(i);
+    }
+  }
+  return { peers, same, value: v };
+}
+
+  
+              
+   
+                  
+                                              
+                                     
+   
+                                                   
+   
+function renderBoard(root, ctx) {
+  const {
+    values, status, notes, selected,
+    highlight, conflicts, focusIndex,
+  } = ctx;
+
+  const cells = root.children;
+  for (let i = 0; i < 81; i++) {
+    const el = cells[i];
+    if (!el) continue;
+
+    const value = values[i];
+    const st = status[i];
+    const isSelected = selected === i;
+    const inPeer = highlight.peers.has(i);
+    const isSame = highlight.same.has(i) && !isSelected;
+    const isConflict = conflicts.has(i);
+
+                                                     
+    let state;
+    if (isConflict) state = 'conflict';
+    else if (isSelected) state = 'selected';
+    else if (isSame) state = 'same';
+    else if (st === CELL_GIVEN) state = 'given';
+    else if (st === CELL_USER) state = 'user';
+    else state = 'empty';
+    el.dataset.state = state;
+
+                                      
+    if (inPeer && !isSelected) {
+                                             
+                                                        
+                                                   
+                                                         
+         
+                                                      
+                                                           
+                                               
+                                                   
+                                                                
+                                     
+         
+                                                   
+                                                               
+                                                
+                                                     
+                                                    
+      const hasText = (value !== 0) || (notes[i] !== 0);
+      if (!hasText) el.dataset.noteFree = '';
+      else delete el.dataset.noteFree;
+      el.dataset.peer = hasText ? 'occupied' : 'empty';
+    } else {
+      delete el.dataset.peer;
+      delete el.dataset.noteFree;
+    }
+
+                      
+                                           
+    if (value !== 0) {
+      if (el.textContent !== String(value)) el.textContent = String(value);
+    } else {
+      const digits = notes[i] !== 0 ? maskToDigits(notes[i]) : [];
+      if (digits.length === 0) {
+        if (el.textContent !== '') el.textContent = '';
+      } else {
+                                                  
+        const slots = new Array(9).fill('');
+        for (const d of digits) slots[d - 1] = String(d);
+        const html = slots.map((s) => `<span>${s}</span>`).join('');
+        if (el.dataset.noteHtml !== html) {
+          el.innerHTML = html;
+          el.dataset.noteHtml = html;
+        }
+      }
+    }
+
+                     
+    el.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+    el.setAttribute('aria-label', describeCell(i, value, st, notes[i]));
+  }
+
+                                       
+  const tabTarget = focusIndex >= 0 ? focusIndex : (selected >= 0 ? selected : firstEmpty(values));
+  for (let i = 0; i < 81; i++) {
+    if (cells[i]) cells[i].tabIndex = i === tabTarget ? 0 : -1;
+  }
+}
+
+function firstEmpty(values) {
+  for (let i = 0; i < 81; i++) if (values[i] === 0) return i;
+  return 0;
+}
+
+function describeCell(i, value, st, noteMask) {
+  const r = rowOf(i) + 1;
+  const c = colOf(i) + 1;
+  if (st === CELL_GIVEN) return `第${r}行第${c}列，给定${value}`;
+  if (st === CELL_USER) return `第${r}行第${c}列，已填${value}`;
+  const digits = noteMask !== 0 ? maskToDigits(noteMask) : [];
+  if (digits.length > 0) return `第${r}行第${c}列，空白，含${digits.length}条笔记`;
+  return `第${r}行第${c}列，空白`;
+}
+
+  
+                             
+                                     
+                                    
+   
+function buildCells(root) {
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < 81; i++) {
+    const el = document.createElement('div');
+    el.className = 'cell';
+    el.setAttribute('role', 'gridcell');
+    el.dataset.index = String(i);
+                                    
+    const r = rowOf(i);
+    const c = colOf(i);
+                                               
+                                          
+    if (c % 3 === 2 && c !== 8) el.dataset.boxlineR = '1';
+    if (r % 3 === 2 && r !== 8) el.dataset.boxlineB = '1';
+    frag.appendChild(el);
+  }
+  root.appendChild(frag);
+  return root;
+}
+
+  
+         
+   
+                               
+                                                       
+                                             
+                                   
+                                         
+   
+         
+              
+                                        
+                         
+   
+function bindBoard(root, handlers) {
+  const { onSelect, onContextNote, onLongPressErase } = handlers;
+
+  let touchStartIdx = null;
+  let longPressTimer = null;
+  let longPressFired = false;
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let longPressIdx = null;
+
+  function clearLongPress() {
+    if (longPressTimer !== null) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  }
+
+  function cancelLongPress() {
+    clearLongPress();
+    longPressIdx = null;
+  }
+
+                                                        
+  root.addEventListener('pointerdown', (e) => {
+    const idx = cellIndexFromTarget(e.target);
+    if (idx === null) return;
+
+                
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+                               
+    touchStartIdx = idx;
+    longPressFired = false;
+  });
+
+  root.addEventListener('pointerup', (e) => {
+    const idx = cellIndexFromTarget(e.target);
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (idx === null) return;
+
+    if (longPressFired) {
+                               
+      cancelLongPress();
+      touchStartIdx = null;
+      return;
+    }
+    clearLongPress();
+    if (touchStartIdx === idx) {
+      onSelect(idx);
+    }
+    touchStartIdx = null;
+  });
+
+                      
+  root.addEventListener('touchstart', (e) => {
+    const idx = cellIndexFromTarget(e.target);
+    if (idx === null) return;
+    const t = e.changedTouches[0];
+    touchStartX = t.clientX;
+    touchStartY = t.clientY;
+    longPressIdx = idx;
+
+                                
+    onSelect(idx, { provisional: true });
+
+    clearLongPress();
+    longPressTimer = setTimeout(() => {
+      longPressFired = true;
+      onLongPressErase(idx);
+    }, 500);
+  }, { passive: true });
+
+  root.addEventListener('touchmove', (e) => {
+    if (longPressTimer === null) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartX;
+    const dy = t.clientY - touchStartY;
+                              
+    if (Math.hypot(dx, dy) > 10) cancelLongPress();
+  }, { passive: true });
+
+  const endTouch = (e) => {
+    if (longPressTimer === null && !longPressFired) return;
+    const idx = cellIndexFromTarget(e.target);
+    if (longPressFired) {
+      cancelLongPress();
+      return;
+    }
+    if (idx !== null && idx === longPressIdx) {
+      onSelect(idx, { confirmed: true });
+    }
+    cancelLongPress();
+  };
+  root.addEventListener('touchend', endTouch, { passive: true });
+  root.addEventListener('touchcancel', () => { cancelLongPress(); touchStartIdx = null; }, { passive: true });
+
+                              
+  root.addEventListener('contextmenu', (e) => {
+    e.preventDefault();                               
+    const idx = cellIndexFromTarget(e.target);
+    if (idx !== null) onContextNote(idx);
+  });
+
+  function cellIndexFromTarget(target) {
+    if (!(target instanceof Element)) return null;
+    const cell = target.closest('.cell');
+    if (!cell || !root.contains(cell)) return null;
+    const i = Number(cell.dataset.index);
+    return Number.isInteger(i) && i >= 0 && i < 81 ? i : null;
+  }
+}
+
+  
+             
+                             
+                                 
+                          
+                                                               
+   
+function moveSelection(from, dr, dc, values, jumpToEmpty) {
+  let r = rowOf(from);
+  let c = colOf(from);
+  for (let step = 0; step < 9; step++) {
+    r += dr;
+    c += dc;
+    if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return from;            
+    const idx = r * SIZE + c;
+    if (!jumpToEmpty || values[idx] === 0) return idx;
+  }
+  return from;
+}
+
+return { computeHighlight, renderBoard, buildCells, bindBoard, moveSelection };
+});
+__def("keypad.js", function (__req) {
+ 
+                            
+  
+                        
+  
+                                                 
+                                       
+                                             
+                   
+  
+                                                  
+                                             
+            
+  
+                                           
+                                     
+   
+
+const { SIZE } = __req("index.js");
+
+const MODE = Object.freeze({
+  NUMBER: 'number',
+  NOTE: 'note',
+  ERASE: 'erase',
+});
+
+                         
+function remainingCounts(values) {
+  const used = new Array(10).fill(0);
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (v >= 1 && v <= 9) used[v] += 1;
+  }
+  const out = new Array(10).fill(0);
+  for (let d = 1; d <= 9; d++) out[d] = Math.max(0, SIZE - used[d]);
+  return out;
+}
+
+ 
+                
+                                              
+   
+function buildKeypad(root, { onDigit, onMode }) {
+  root.innerHTML = '';
+
+                            
+  const modeBar = document.createElement('div');
+  modeBar.className = 'mode-bar';
+  modeBar.setAttribute('role', 'radiogroup');
+  modeBar.setAttribute('aria-label', '输入模式');
+
+  const modeDefs = [
+    { mode: MODE.NUMBER, label: '数字', symbol: '123' },
+    { mode: MODE.NOTE, label: '笔记', symbol: '✏' },
+    { mode: MODE.ERASE, label: '擦除', symbol: '⌫' },
+  ];
+  const modeButtons = [];
+  for (const def of modeDefs) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'mode-btn';
+    btn.dataset.mode = def.mode;
+    btn.setAttribute('role', 'radio');
+    btn.setAttribute('aria-checked', 'false');
+                                       
+    btn.innerHTML =
+      `<span class="mode-btn__symbol" aria-hidden="true">${def.symbol}</span>` +
+      `<span class="mode-btn__label">${def.label}</span>`;
+    btn.addEventListener('click', () => onMode(def.mode));
+    modeBar.appendChild(btn);
+    modeButtons.push(btn);
+  }
+  root.appendChild(modeBar);
+
+                       
+  const pad = document.createElement('div');
+  pad.className = 'keypad';
+  pad.setAttribute('role', 'group');
+  pad.setAttribute('aria-label', '数字键盘');
+
+  const keyButtons = [];
+  for (let d = 1; d <= 9; d++) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'key';
+    btn.dataset.digit = String(d);
+                    
+    btn.innerHTML =
+      `<span class="key__digit">${d}</span><span class="key__count"></span>`;
+    btn.addEventListener('click', () => onDigit(d));
+    pad.appendChild(btn);
+    keyButtons.push(btn);
+  }
+  root.appendChild(pad);
+
+  return { modeBar, modeButtons, pad, keyButtons };
+}
+
+ 
+          
+                                         
+                   
+                                            
+                                                    
+   
+function updateKeypad(refs, { remaining, mode, noteState }) {
+  for (let d = 1; d <= 9; d++) {
+    const btn = refs.keyButtons[d - 1];
+    if (!btn) continue;
+    const left = remaining[d];
+    btn.querySelector('.key__count').textContent = left > 0 ? `(${left})` : '(0)';
+
+                    
+    const exhausted = left === 0;
+    btn.disabled = exhausted;
+    btn.classList.toggle('key--exhausted', exhausted);
+    btn.setAttribute('aria-label', `数字 ${d}，剩余 ${left} 个`);
+
+                  
+    btn.classList.toggle('key--noted', !!(noteState && noteState[d]));
+  }
+
+  for (const btn of refs.modeButtons) {
+    const active = btn.dataset.mode === mode;
+    btn.setAttribute('aria-checked', active ? 'true' : 'false');
+    btn.classList.toggle('mode-btn--active', active);
+  }
+  refs.modeBar.dataset.mode = mode;
+}
+
+return { MODE, remainingCounts, buildKeypad, updateKeypad };
+});
+__def("storage.js", function (__req) {
+  
+                            
+   
+                 
+                                   
+                                
+                                          
+                          
+   
+                       
+                                                              
+                                                  
+                
+   
+                                 
+                                                            
+                                                           
+                                   
+   
+                    
+                                                     
+                                           
+   
+
+const { DIFFICULTY_BANDS, getConflicts } = __req("index.js");
+
+const SCHEMA_VERSION = 1;
+
+const KEY_SAVE = 'sudoku.v1.save';
+const KEY_STATS = 'sudoku.v1.stats';
+const KEY_SETTINGS = 'sudoku.v1.settings';
+const KEY_LAST_DIFF = 'sudoku.v1.lastDifficulty';
+
+                                                                         
+const VALID_BANDS = DIFFICULTY_BANDS.map((b) => b.id);
+
+const DEFAULT_SETTINGS = Object.freeze({
+  schemaVersion: SCHEMA_VERSION,
+  highlightPeers: true,                      
+  highlightSameDigit: true,                              
+  errorHints: false,                                     
+  timerVisible: true,                                  
+});
+
+                                                                
+
+class Storage {
+  constructor() {
+                                               
+    this.noPersistMode = false;
+                                         
+    this.notice = '';
+  }
+
+    
+                                                    
+                                                       
+     
+  probe() {
+    try {
+      const probeKey = 'sudoku.v1.probe';
+      window.localStorage.setItem(probeKey, '1');
+      window.localStorage.removeItem(probeKey);
+      this.noPersistMode = false;
+    } catch {
+      this.noPersistMode = true;
+    }
+    return !this.noPersistMode;
+  }
+
+                                         
+  _readJSON(key) {
+    if (this.noPersistMode) return null;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (raw === null) return null;
+      return JSON.parse(raw);                
+    } catch {
+                                              
+      return null;
+    }
+  }
+
+                                                
+  _writeJSON(key, value) {
+    if (this.noPersistMode) return false;
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value));
+      return true;
+    } catch {
+                                    
+      this.noPersistMode = true;
+      return false;
+    }
+  }
+
+  _remove(key) {
+    if (this.noPersistMode) return;
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      this.noPersistMode = true;
+    }
+  }
+
+  _readRaw(key) {
+    if (this.noPersistMode) return null;
+    try {
+      return window.localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }
+
+  _writeRaw(key, str) {
+    if (this.noPersistMode) return false;
+    try {
+      window.localStorage.setItem(key, str);
+      return true;
+    } catch {
+      this.noPersistMode = true;
+      return false;
+    }
+  }
+
+                                                              
+
+    
+                                               
+                                           
+     
+  loadSettings() {
+    const raw = this._readJSON(KEY_SETTINGS);
+    const out = { ...DEFAULT_SETTINGS };
+    if (raw && typeof raw === 'object') {
+      for (const key of ['highlightPeers', 'highlightSameDigit', 'errorHints', 'timerVisible']) {
+        if (typeof raw[key] === 'boolean') out[key] = raw[key];
+      }
+    }
+                                  
+    this._writeJSON(KEY_SETTINGS, out);
+    return out;
+  }
+
+                                       
+  saveSettings(settings) {
+    this._writeJSON(KEY_SETTINGS, { ...settings, schemaVersion: SCHEMA_VERSION });
+  }
+
+                                                            
+
+  loadLastDifficulty() {
+    const raw = this._readRaw(KEY_LAST_DIFF);
+    if (raw !== null && VALID_BANDS.includes(raw)) return raw;
+    return 'medium';                   
+  }
+
+  saveLastDifficulty(bandId) {
+    if (!VALID_BANDS.includes(bandId)) return;
+    this._writeRaw(KEY_LAST_DIFF, bandId);
+  }
+
+                                                              
+
+    
+                            
+                                                         
+                                       
+     
+                                        
+     
+  loadSave() {
+    const raw = this._readJSON(KEY_SAVE);
+    if (raw === null) {
+                                   
+      if (this._readRaw(KEY_SAVE) !== null) {
+        this._remove(KEY_SAVE);
+        this.notice = '上次的进度无法读取，已开始新局';
+      }
+      return null;
+    }
+
+    if (raw.schemaVersion !== SCHEMA_VERSION) {
+      this._remove(KEY_SAVE);                                       
+      this.notice = '上次的进度无法读取，已开始新局';
+      return null;
+    }
+
+    if (!validateSave(raw)) {
+      this._remove(KEY_SAVE);
+      this.notice = '上次的进度无法读取，已开始新局';
+      return null;
+    }
+
+                                               
+    if (raw.completion !== null && raw.completion !== undefined) {
+      this._remove(KEY_SAVE);
+      return null;
+    }
+
+    return raw;
+  }
+
+                                   
+  hasSave() {
+    return this.loadSave() !== null;
+  }
+
+    
+           
+                                                             
+     
+  saveGame(snapshot) {
+    this._writeJSON(KEY_SAVE, { ...snapshot, schemaVersion: SCHEMA_VERSION, savedAt: Date.now() });
+  }
+
+                                 
+  clearSave() {
+    this._remove(KEY_SAVE);
+  }
+
+                                                              
+
+  loadStats() {
+    const raw = this._readJSON(KEY_STATS);
+    if (!raw || raw.schemaVersion !== SCHEMA_VERSION || typeof raw !== 'object') {
+      return emptyStats();
+    }
+                                    
+    const base = emptyStats();
+    const byDifficulty = { ...base.byDifficulty };
+    if (raw.byDifficulty && typeof raw.byDifficulty === 'object') {
+      for (const band of VALID_BANDS) {
+        const b = raw.byDifficulty[band];
+        if (b && typeof b === 'object') {
+          byDifficulty[band] = {
+            played: numOr(b.played, 0),
+            completed: numOr(b.completed, 0),
+            bestMs: typeof b.bestMs === 'number' && Number.isFinite(b.bestMs) && b.bestMs >= 0
+              ? b.bestMs
+              : null,                                        
+            totalMs: numOr(b.totalMs, 0),
+          };
+        }
+      }
+    }
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      totals: {
+        played: numOr(raw.totals?.played, 0),
+        completed: numOr(raw.totals?.completed, 0),
+      },
+      byDifficulty,
+      byDate: (raw.byDate && typeof raw.byDate === 'object') ? { ...raw.byDate } : {},
+      streak: {
+        current: numOr(raw.streak?.current, 0),
+        best: numOr(raw.streak?.best, 0),
+        lastCompletedDate: typeof raw.streak?.lastCompletedDate === 'string'
+          ? raw.streak.lastCompletedDate
+          : null,
+      },
+      records: {
+        fastestEverMs: typeof raw.records?.fastestEverMs === 'number'
+          ? raw.records.fastestEverMs
+          : null,
+        fastestEverDifficulty: typeof raw.records?.fastestEverDifficulty === 'string'
+          ? raw.records.fastestEverDifficulty
+          : null,
+        fastestEverAt: numOr(raw.records?.fastestEverAt, 0),
+      },
+    };
+  }
+
+  saveStats(stats) {
+    this._writeJSON(KEY_STATS, { ...stats, schemaVersion: SCHEMA_VERSION });
+  }
+}
+
+function numOr(v, fallback) {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : fallback;
+}
+
+function emptyStats() {
+  const byDifficulty = {};
+  for (const band of VALID_BANDS) {
+    byDifficulty[band] = { played: 0, completed: 0, bestMs: null, totalMs: 0 };
+  }
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    totals: { played: 0, completed: 0 },
+    byDifficulty,
+    byDate: {},
+    streak: { current: 0, best: 0, lastCompletedDate: null },
+    records: { fastestEverMs: null, fastestEverDifficulty: null, fastestEverAt: 0 },
+  };
+}
+
+                                                            
+
+  
+                                   
+   
+                               
+                                                         
+                                      
+                                                    
+                             
+                                                 
+   
+function validateSave(s) {
+  try {
+    if (!s || typeof s !== 'object') return false;
+    const p = s.puzzle;
+    const g = s.progress;
+    if (!p || typeof p !== 'object' || !g || typeof g !== 'object') return false;
+
+           
+    if (!Array.isArray(p.givens) || p.givens.length !== 81) return false;
+    if (!Array.isArray(p.solution) || p.solution.length !== 81) return false;
+    if (!Array.isArray(g.values) || g.values.length !== 81) return false;
+
+           
+    for (let i = 0; i < 81; i++) {
+      const gv = p.givens[i];
+      const sv = p.solution[i];
+      const vv = g.values[i];
+      if (!isDigitOrZero(gv)) return false;
+      if (!isDigitOrZero(sv)) return false;
+      if (!isDigitOrZero(vv)) return false;
+      if (sv === 0) return false;                                   
+      if (gv !== 0 && gv !== sv) return false;                 
+    }
+
+           
+    if (!Array.isArray(g.notes) || g.notes.length !== 81) return false;
+    for (let i = 0; i < 81; i++) {
+      const arr = g.notes[i];
+      if (!Array.isArray(arr)) return false;
+      const seen = new Set();
+      for (const d of arr) {
+        if (!Number.isInteger(d) || d < 1 || d > 9) return false;
+        if (seen.has(d)) return false;                      
+        seen.add(d);
+      }
+    }
+
+           /* ⚠️ 2026-10-22 修复：这条校验原来写的是
+       `if (g.values[i] !== 0 && p.givens[i] !== 0) return false;`
+       ——即"给定格上不允许有值"。但引擎的 `state.values` **本来就包含 given**
+       （createPuzzleState 用 cloneBoard(givens) 作 values 的初值），
+       于是**每一份存档都必然在这里被判非法**：loadSave 直接 remove + 提示
+       "上次的进度无法读取，已开始新局"。
+       用户看到的正是"玩到一半退出、再进来进度没了"（存档功能形同不存在）。
+       正确语义是「给定格上的值必须与给定一致」，不是"必须为空"。 */
+    for (let i = 0; i < 81; i++) {
+      if (p.givens[i] !== 0 && g.values[i] !== 0 && g.values[i] !== p.givens[i]) return false;
+    }
+
+           
+    if (!Number.isFinite(g.elapsedMs) || g.elapsedMs < 0) return false;
+
+           
+    if (!VALID_BANDS.includes(p.difficulty)) return false;
+    if (!VALID_BANDS.includes(p.difficultyAchieved)) return false;
+
+    return true;
+  } catch {
+    return false;                               
+  }
+}
+
+function isDigitOrZero(v) {
+  return Number.isInteger(v) && v >= 0 && v <= 9;
+}
+
+                                                               
+
+                                             
+function localDateKey(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+                                  
+function daysBetween(a, b) {
+  const pa = parseDateKey(a);
+  const pb = parseDateKey(b);
+  if (pa === null || pb === null) return null;
+  return Math.round((pb - pa) / 86400000);
+}
+
+function parseDateKey(key) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+}
+
+  
+                                          
+                                                      
+   
+function countPlayed(stats, achievedBand) {
+  const band = VALID_BANDS.includes(achievedBand) ? achievedBand : 'medium';
+  stats.totals.played += 1;
+  stats.byDifficulty[band].played += 1;
+}
+
+  
+                                                 
+                                          
+   
+                                                                  
+                                     
+   
+function countCompleted(stats, { band, elapsedMs, completedAt }) {
+  const b = VALID_BANDS.includes(band) ? band : 'medium';
+  const bucket = stats.byDifficulty[b];
+
+  stats.totals.completed += 1;
+  bucket.completed += 1;
+  bucket.totalMs += Math.max(0, elapsedMs);
+                                 
+  bucket.bestMs = bucket.bestMs === null ? elapsedMs : Math.min(bucket.bestMs, elapsedMs);
+
+                         
+  const today = localDateKey(new Date(completedAt));
+  if (!stats.byDate[today]) stats.byDate[today] = { completed: 0, ms: 0 };
+  stats.byDate[today].completed += 1;
+  stats.byDate[today].ms += Math.max(0, elapsedMs);
+
+          
+  const last = stats.streak.lastCompletedDate;
+  if (last === today) {
+                           
+  } else if (last !== null && daysBetween(last, today) === 1) {
+    stats.streak.current += 1;
+  } else {
+    stats.streak.current = 1;
+  }
+  stats.streak.lastCompletedDate = today;
+  stats.streak.best = Math.max(stats.streak.best, stats.streak.current);
+
+            
+  if (stats.records.fastestEverMs === null || elapsedMs < stats.records.fastestEverMs) {
+    stats.records.fastestEverMs = elapsedMs;
+    stats.records.fastestEverDifficulty = b;
+    stats.records.fastestEverAt = completedAt;
+  }
+  return stats.records.fastestEverMs === elapsedMs;                
+}
+
+                                                  
+
+  
+                       
+   
+                                                
+                            
+   
+                                                      
+                     
+   
+                                          
+                                        
+   
+                                       
+                                                  
+   
+function computeConflictTruth(values) {
+  const set = new Set(getConflicts(values));
+  return set;
+}
+
+  
+                                          
+                                                
+   
+function presentConflicts(conflictTruth, { errorHints, manualCheckActive }) {
+  if (errorHints !== true && manualCheckActive !== true) return new Set();
+  return new Set(conflictTruth);
+}
+
+return { SCHEMA_VERSION, KEY_SAVE, KEY_STATS, KEY_SETTINGS, KEY_LAST_DIFF, VALID_BANDS, Storage, emptyStats, validateSave, localDateKey, daysBetween, countPlayed, countCompleted, computeConflictTruth, presentConflicts };
+});
+__def("stats.js", function (__req) {
+ 
+                   
+  
+                                          
+                                                 
+                 
+  
+                                                         
+                                                    
+                                             
+                      
+   
+
+const { DIFFICULTY_BANDS } = __req("index.js");
+
+                                   
+function formatDuration(ms) {
+  if (ms === null || ms === undefined || !Number.isFinite(ms) || ms < 0) return '—';
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function formatDateTime(epochMs) {
+  if (!epochMs) return '—';
+  const d = new Date(epochMs);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function renderStats(container, { stats, noPersistMode }) {
+  container.innerHTML = '';
+
+  if (noPersistMode) {
+                     
+    const box = document.createElement('div');
+    box.className = 'panel__empty';
+    box.textContent = '统计不可保存';
+    container.appendChild(box);
+    return;
+  }
+
+                 
+  const totals = document.createElement('div');
+  totals.className = 'stats-totals';
+  const totalCompleted = stats.totals.completed;
+  const totalPlayed = stats.totals.played;
+  totals.innerHTML =
+    `<div class="stats-totals__item"><span class="stats-totals__num">${totalCompleted}</span><span class="stats-totals__label">完成</span></div>` +
+    `<div class="stats-totals__item"><span class="stats-totals__num">${totalPlayed}</span><span class="stats-totals__label">开局</span></div>` +
+    `<div class="stats-totals__item"><span class="stats-totals__num">${Math.max(0, totalPlayed - totalCompleted)}</span><span class="stats-totals__label">未完成</span></div>` +
+    `<div class="stats-totals__item"><span class="stats-totals__num">${stats.streak.current}</span><span class="stats-totals__label">连续天数</span></div>` +
+    `<div class="stats-totals__item"><span class="stats-totals__num">${stats.streak.best}</span><span class="stats-totals__label">最长连续</span></div>`;
+  container.appendChild(totals);
+
+                   
+  const rec = document.createElement('p');
+  rec.className = 'stats-record';
+  rec.textContent = stats.records.fastestEverMs === null
+    ? '最快纪录：—'
+    : `最快纪录：${formatDuration(stats.records.fastestEverMs)}` +
+      `（${bandLabel(stats.records.fastestEverDifficulty)} · ${formatDateTime(stats.records.fastestEverAt)}）`;
+  container.appendChild(rec);
+
+                    
+  const table = document.createElement('table');
+  table.className = 'stats-table';
+  table.innerHTML =
+    '<thead><tr><th scope="col">难度</th><th scope="col">完成</th>' +
+    '<th scope="col">开局</th><th scope="col">最佳</th><th scope="col">平均</th></thead>';
+
+  const tbody = document.createElement('tbody');
+  for (const band of DIFFICULTY_BANDS) {
+    const b = stats.byDifficulty[band.id];
+    const tr = document.createElement('tr');
+                       
+    const avg = b.completed > 0 ? b.totalMs / b.completed : null;
+    tr.innerHTML =
+      `<th scope="row">${band.label}</th>` +
+      `<td>${b.completed}</td>` +
+      `<td>${b.played}</td>` +
+      `<td>${formatDuration(b.bestMs)}</td>` +              
+      `<td>${formatDuration(avg)}</td>`;
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  container.appendChild(table);
+}
+
+function bandLabel(bandId) {
+  const found = DIFFICULTY_BANDS.find((b) => b.id === bandId);
+  return found ? found.label : '—';
+}
+
+return { formatDuration, formatDateTime, renderStats };
+});
+__def("app.js", function (__req) {
+ 
+                                  
+  
+                                                    
+  
+                       
+                                                            
+                                                               
+                                                        
+               
+  
+                         
+                                                  
+                                
+                                        
+  
+                    
+                                                                
+                                        
+                                 
+  
+                      
+                                                        
+                                                           
+   
+
+const { DIFFICULTY_BANDS, createPuzzleState, setUserValue, toggleNote, clearCell, getProgress, isSolved, getStateConflicts, getMistakes, countSolutions, generatePuzzle, hasUniqueSolution, PEER_COUNT, PEERS, rowOf, colOf } = __req("index.js");
+
+const { Storage, computeConflictTruth, presentConflicts, countPlayed, countCompleted, VALID_BANDS } = __req("storage.js");
+const { buildCells, renderBoard, computeHighlight, bindBoard, moveSelection } = __req("board.js");
+const { MODE, buildKeypad, updateKeypad, remainingCounts } = __req("keypad.js");
+const { renderStats, formatDuration } = __req("stats.js");
+
+const SAVE_DEBOUNCE_MS = 200;            
+
+class App {
+  constructor(dom) {
+    this.dom = dom;
+    this.storage = new Storage();
+    this.storage.probe();
+
+    this.settings = this.storage.loadSettings();
+    this.lastDifficulty = this.storage.loadLastDifficulty();
+    this.stats = this.storage.loadStats();
+
+    this.pageState = 'MENU';
+    this.puzzleState = null;
+    this.selected = -1;
+    this.mode = MODE.NUMBER;
+    this.manualCheckActive = false;                  
+    this.fullWarnedForRound = false;                             
+    this.saveTimer = null;
+    this.completionRecorded = false;               
+    this.lastDigit = 0;                                     
+    this.generating = false;
+
+    this.timer = {
+      accumulated: 0,
+      baseline: 0,
+      running: false,
+      handle: null,
+    };
+
+    this.boardRefs = null;
+    this.keypadRefs = null;
+  }
+
+                                                      
+
+  start() {
+    this.cacheDom();
+    this.buildBoard();
+    this.buildKeypad();
+    this.bindEvents();
+    this.startTimerLoop();
+    this.applySettings();
+    this.renderMenu();
+    this.exposeDebugHooks();
+  }
+
+  cacheDom() {
+    const $ = (id) => document.getElementById(id);
+    this.dom.menu = $('menu');
+    this.dom.menuList = $('menu-list');
+    this.dom.continueBtn = $('continue-btn');
+    this.dom.newGameBtn = $('new-game-btn');
+    this.dom.statsBtn = $('stats-btn');
+    this.dom.settingsBtn = $('settings-btn');
+    this.dom.game = $('game');
+    this.dom.board = $('board');
+    this.dom.keypad = $('keypad');
+    this.dom.timerEl = $('timer');
+    this.dom.pauseBtn = $('pause-btn');
+    this.dom.statusLeft = $('status-left');
+    this.dom.statusRight = $('status-right');
+    this.dom.pauseOverlay = $('pause-overlay');
+    this.dom.resumeBtn = $('resume-btn');
+    this.dom.verifyBtn = $('verify-btn');
+    this.dom.quitBtn = $('quit-btn');
+    this.dom.pauseStats = $('pause-stats');
+    this.dom.completeOverlay = $('complete-overlay');
+    this.dom.completeBody = $('complete-body');
+    this.dom.againBtn = $('again-btn');
+    this.dom.completeMenuBtn = $('complete-menu-btn');
+    this.dom.settingsOverlay = $('settings-overlay');
+    this.dom.settingsBody = $('settings-body');
+    this.dom.settingsClose = $('settings-close');
+    this.dom.statsOverlay = $('stats-overlay');
+    this.dom.statsBody = $('stats-body');
+    this.dom.statsClose = $('stats-close');
+    this.dom.loading = $('loading');
+    this.dom.loadingText = $('loading-text');
+    this.dom.toast = $('toast');
+  }
+
+  buildBoard() {
+    this.dom.board.setAttribute('role', 'application');
+    this.dom.board.setAttribute('aria-label', '数独盘面，9行9列');
+    buildCells(this.dom.board);
+    bindBoard(this.dom.board, {
+      onSelect: (idx, opts) => this.onSelectCell(idx, opts),
+      onContextNote: (idx) => this.onContextNote(idx),
+      onLongPressErase: (idx) => this.onLongPressErase(idx),
+    });
+    this.boardRefs = { root: this.dom.board };
+  }
+
+  buildKeypad() {
+    this.keypadRefs = buildKeypad(this.dom.keypad, {
+      onDigit: (d) => this.onDigitKey(d),
+      onMode: (m) => this.setMode(m),
+    });
+  }
+
+  bindEvents() {
+                   
+    this.dom.newGameBtn.addEventListener('click', () => {
+      this.newGame(this.lastDifficulty);
+    });
+    this.dom.continueBtn.addEventListener('click', () => this.continueGame());
+    this.dom.statsBtn.addEventListener('click', () => this.openStats());
+    this.dom.settingsBtn.addEventListener('click', () => this.openSettings());
+
+                    
+    this.dom.pauseBtn.addEventListener('click', () => this.pause());
+    this.dom.resumeBtn.addEventListener('click', () => this.resume());
+    // ⚠️ `bindEvents()` 里没有 `cacheDom()` 那个局部 `$` 助手，
+    // 这里必须用 `document.getElementById`（写 `$()` 会抛 ReferenceError，
+    // 而且它发生在 start() 的 bindEvents 阶段 → renderMenu 永远跑不到 →
+    // 主菜单难度列表空白、整个页面看起来"坏了"）。
+    this.dom.saveBtn = document.getElementById('save-btn');
+    // 2026-10-22 需求「数独1 新增存档功能」：暂停面板给一个显式存档入口。
+    // 自动保存本来就有（每次落子后 200ms 防抖），但用户看不到"什么时候真的存了"，
+    // 于是会怀疑进度丢了。这个按钮把同一条 flushSave 路径摆到台面上，并给一条回执。
+    this.dom.saveBtn.addEventListener('click', () => {
+      this.flushSave();
+      const ok = this.storage.savedSave !== null;
+      this.showToast(ok ? '已存档，下次进主菜单点「继续本局」即可接着玩' : '本机无法保存进度');
+    });
+    this.dom.quitBtn.addEventListener('click', () => this.quitToMenu());
+    this.dom.verifyBtn.addEventListener('click', () => this.runManualCheck());
+                                                 
+                                                 
+                                           
+    this.dom.againBtn.addEventListener('click', () => {
+      const band = this.puzzleMeta ? this.puzzleMeta.difficulty : this.lastDifficulty;
+      this.newGame(band);
+    });
+    this.dom.completeMenuBtn.addEventListener('click', () => this.quitToMenu());
+    this.dom.settingsClose.addEventListener('click', () => this.closeSettings());
+    this.dom.statsClose.addEventListener('click', () => this.closeStats());
+
+                   
+    document.addEventListener('keydown', (e) => this.onKeyDown(e));
+
+                     
+                                                                   
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        if (this.pageState === 'PLAYING') this.pause({ silent: true });
+        this.flushSave();
+      }
+    });
+    // 2026-10-22：Android WebView 里 Activity 被切走 / 被系统回收时，
+    // `pagehide` 不一定会发；`visibilitychange` 更可靠（页面进入 hidden 即触发）。
+    // 两者都挂上，代价只是一次 localStorage 写入。
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') this.flushSave();
+    });
+    window.addEventListener('pagehide', () => this.flushSave());
+    window.addEventListener('beforeunload', () => this.flushSave());
+  }
+
+                                                       
+
+   
+                                 
+                               
+     
+  elapsedMs() {
+    if (!this.timer.running) return this.timer.accumulated;
+    return this.timer.accumulated + (Date.now() - this.timer.baseline);
+  }
+
+  timerStart() {
+    if (this.timer.running) return;
+    this.timer.baseline = Date.now();
+    this.timer.running = true;
+    this.updateTimerDisplay();
+  }
+
+                                            
+  timerFreeze() {
+    if (this.timer.running) {
+      this.timer.accumulated += Date.now() - this.timer.baseline;
+      this.timer.running = false;
+    }
+    this.updateTimerDisplay();
+  }
+
+  timerReset() {
+    this.timer.accumulated = 0;
+    this.timer.running = false;
+    this.updateTimerDisplay();
+  }
+
+                                   
+  timerRestore(elapsedMs) {
+    this.timer.accumulated = Math.max(0, elapsedMs);
+    this.timer.running = false;
+    this.updateTimerDisplay();
+  }
+
+   
+                         
+                                          
+     
+  startTimerLoop() {
+    this.timer.handle = setInterval(() => {
+      if (this.pageState === 'PLAYING' && this.timer.running) {
+        this.updateTimerDisplay();
+      }
+    }, 250);
+  }
+
+  updateTimerDisplay() {
+                                             
+    this.dom.timerEl.setAttribute('aria-live', 'off');
+    this.dom.timerEl.textContent = formatDuration(this.elapsedMs());
+    this.dom.timerEl.hidden = !this.settings.timerVisible;
+  }
+
+                                                      
+
+  renderMenu() {
+    this.pageState = 'MENU';
+    this.dom.menu.hidden = false;
+    this.dom.game.hidden = true;
+    this.hideOverlay(this.dom.pauseOverlay);
+    this.hideOverlay(this.dom.completeOverlay);
+
+            
+    this.dom.menuList.innerHTML = '';
+    for (const band of DIFFICULTY_BANDS) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'difficulty';
+      btn.setAttribute('role', 'radio');
+      const selected = band.id === this.lastDifficulty;
+      btn.setAttribute('aria-checked', selected ? 'true' : 'false');
+      btn.classList.toggle('difficulty--active', selected);
+      btn.innerHTML = `<span class="difficulty__label">${band.label}</span>`;
+      btn.addEventListener('click', () => {
+        this.lastDifficulty = band.id;
+        this.storage.saveLastDifficulty(band.id);
+        this.renderMenu();
+      });
+      this.dom.menuList.appendChild(btn);
+    }
+    this.dom.menuList.setAttribute('role', 'radiogroup');
+    this.dom.menuList.setAttribute('aria-label', '难度选择');
+
+                                      
+    const save = this.storage.loadSave();
+    this.dom.continueBtn.hidden = save === null;
+    // 2026-10-22：继续按钮上直接写明"存的是哪一局"，用户才知道点下去会发生什么。
+    if (save) {
+      const band = DIFFICULTY_BANDS.find((b) => b.id === save.puzzle.difficulty);
+      const ms = save.progress.elapsedMs || 0;
+      const mm = String(Math.floor(ms / 60000)).padStart(2, '0');
+      const ss = String(Math.floor((ms % 60000) / 1000)).padStart(2, '0');
+      this.dom.continueBtn.textContent =
+        `继续本局（${band ? band.label : '未知难度'} · ${mm}:${ss}）`;
+    } else {
+      this.dom.continueBtn.textContent = '继续本局';
+    }
+
+    if (this.storage.noPersistMode) {
+      this.dom.statusLeft.textContent = '本次进度不会保存';
+    } else {
+      this.dom.statusLeft.textContent = '';
+    }
+    if (this.storage.notice) {
+      this.showToast(this.storage.notice);
+      this.storage.notice = '';
+    }
+  }
+
+                                                       
+
+   
+          
+    
+                                                   
+                                                          
+                                                         
+     
+  async newGame(bandId) {
+    if (this.generating) return;
+    if (!VALID_BANDS.includes(bandId)) bandId = 'medium';
+    this.generating = true;
+    this.showLoading(true);
+    this.dom.newGameBtn.disabled = true;
+    this.dom.newGameBtn.textContent = '正在生成…';
+
+    const seed = (Date.now() ^ (Math.random() * 0xffffffff)) >>> 0;
+    let result = null;
+    let usedWorker = false;
+
+    try {
+      result = await this.generateWithWorker(bandId, seed);
+      usedWorker = result !== null;
+    } catch {
+      result = null;
+    }
+
+    if (result === null) {
+                           
+      result = await this.generateChunked(bandId, seed);
+    }
+
+    this.generating = false;
+    this.showLoading(false);
+    this.dom.newGameBtn.disabled = false;
+    this.dom.newGameBtn.textContent = '开始新局';
+    if (!result || result.error) {
+      this.showToast('已生成当前可用的最高难度盘面');
+      if (!result) return;
+    }
+
+                                   
+    const achieved = VALID_BANDS.includes(result.difficulty.band)
+      ? result.difficulty.band
+      : bandId;
+
+    this.puzzleMeta = {
+      id: `${Date.now().toString(36)}-${(seed >>> 0).toString(36)}`,
+      seed: result.seed,
+      difficulty: bandId,
+      difficultyAchieved: achieved,
+      degraded: false,
+      givens: result.puzzle,
+      solution: result.solution,
+    };
+
+    this.puzzleState = createPuzzleState({
+      givens: result.puzzle,
+      solution: result.solution,
+      difficulty: bandId,
+    });
+
+                            
+    this.selected = this.puzzleState.values.findIndex((v, i) => v === 0 && this.puzzleState.status[i] === 0);
+    if (this.selected < 0) this.selected = 0;
+    this.mode = MODE.NUMBER;
+    this.manualCheckActive = false;
+    this.fullWarnedForRound = false;
+    this.completionRecorded = false;
+    this.lastDigit = 0;
+    this.timerReset();
+
+                                                    
+    countPlayed(this.stats, achieved);
+    this.storage.saveStats(this.stats);
+    this.storage.saveLastDifficulty(bandId);
+    this.flushSave();
+
+    this.pageState = 'PLAYING';
+    this.dom.menu.hidden = true;
+    this.dom.game.hidden = false;
+    this.hideOverlay(this.dom.completeOverlay);
+    this.hideOverlay(this.dom.pauseOverlay);
+    this.applySettings();
+    this.renderAll();
+    this.timerStart();
+  }
+
+   
+                 
+    
+                                                       
+                                                       
+                                                 
+                             
+     
+  generateWithWorker(bandId, seed) {
+    return new Promise((resolve, reject) => {
+      if (!this.workerUrl) { reject(new Error('worker-unavailable')); return; }
+      let worker;
+      try {
+        worker = new Worker(this.workerUrl);
+      } catch (e) {
+        reject(e);
+        return;
+      }
+      const timer = setTimeout(() => {
+        worker.terminate();
+        reject(new Error('worker-timeout'));
+      }, 8000);
+      worker.onmessage = (e) => {
+        clearTimeout(timer);
+        worker.terminate();
+        resolve(e.data);
+      };
+      worker.onerror = (e) => {
+        clearTimeout(timer);
+        worker.terminate();
+        reject(new Error('worker-error'));
+      };
+      worker.postMessage({ difficulty: bandId, seed, id: 1 });
+    });
+  }
+
+   
+                                                   
+                                                    
+     
+  async generateChunked(bandId, seed) {
+    const TRIES = 10;
+    let best = null;
+    for (let t = 0; t < TRIES; t++) {
+      await new Promise((r) => requestAnimationFrame(r));
+      const cand = generatePuzzle({
+        difficulty: bandId,
+        tries: 1,
+        seed: (seed + t * 0x9e3779b9) >>> 0,
+      });
+      if (best === null || cand.difficulty.score > best.difficulty.score) best = cand;
+      this.dom.loadingText.textContent = '正在生成…';
+    }
+    return best;
+  }
+
+                                                      
+
+  continueGame() {
+    const save = this.storage.loadSave();
+    if (save === null) {
+      this.renderMenu();
+      return;
+    }
+
+                                      
+                       
+    if (!hasUniqueSolution(save.puzzle.solution).unique) {
+      this.storage.clearSave();
+      this.showToast('上次的进度无法读取，已开始新局');
+      this.renderMenu();
+      return;
+    }
+
+    this.puzzleMeta = save.puzzle;
+    this.puzzleState = createPuzzleState({
+      givens: save.puzzle.givens,
+      solution: save.puzzle.solution,
+      difficulty: save.puzzle.difficulty,
+    });
+
+                
+    const values = Uint8Array.from(save.progress.values);
+    const status = Uint8Array.from(save.progress.status);
+    const notes = Int16Array.from(save.progress.notes);
+    this.puzzleState = {
+      values,
+      status,
+      notes,
+      givens: Uint8Array.from(save.puzzle.givens),
+      solution: Uint8Array.from(save.puzzle.solution),
+      difficulty: save.puzzle.difficulty,
+      createdAt: save.progress.startedAt || Date.now(),
+    };
+
+    this.selected = this.puzzleState.values.findIndex((v, i) => v === 0 && this.puzzleState.status[i] === 0);
+    if (this.selected < 0) this.selected = 0;
+    this.mode = MODE.NUMBER;
+    this.manualCheckActive = false;
+    this.fullWarnedForRound = false;
+    this.completionRecorded = false;
+    this.lastDigit = 0;
+
+                                         
+    this.timerRestore(save.progress.elapsedMs);
+
+    this.pageState = 'PLAYING';
+    this.dom.menu.hidden = true;
+    this.dom.game.hidden = false;
+    this.applySettings();
+    this.renderAll();
+    this.timerStart();
+  }
+
+                                                      
+
+  onSelectCell(idx, opts = {}) {
+    if (this.pageState !== 'PLAYING' && this.pageState !== 'PAUSED') return;
+    if (this.pageState !== 'PLAYING') return;
+                                                
+    if (this.puzzleState.status[idx] === 1) {
+      if (opts && opts.provisional) {
+                            
+        this.selected = -1;
+        this.renderBoard();
+      }
+      return;
+    }
+    this.selected = idx;
+                          
+    this.renderAll();
+  }
+
+   
+                                  
+                                               
+                                
+     
+  onContextNote(idx) {
+    if (this.pageState !== 'PLAYING') return;
+    if (this.puzzleState.status[idx] === 1) return;
+    if (this.lastDigit === 0) {
+      this.showToast('先用数字键选择要记的数字');
+      return;
+    }
+    this.selected = idx;
+    this.applyNote(this.lastDigit);
+  }
+
+  onLongPressErase(idx) {
+    if (this.pageState !== 'PLAYING') return;
+    if (this.puzzleState.status[idx] === 1) return;
+    this.selected = idx;
+    this.applyErase();
+  }
+
+  setMode(mode) {
+    this.mode = mode;
+                         
+    this.renderKeypad();
+  }
+
+  onDigitKey(d) {
+    if (this.pageState !== 'PLAYING') return;
+                            
+    this.lastDigit = d;
+    if (this.selected < 0) return;                          
+    // ⚠️ 2026-10-22 修复：原先只分了「笔记 / 非笔记」两种，`MODE.ERASE`
+    // （擦除模式）落进了 else → 调的是 applyValue(d)：点数字键不但不擦，
+    // 反而把该数字填进了格子。用户报的"笔记无法擦除"就是这条的可见后果
+    // （擦除模式下想擦掉笔记，结果填了个数字，笔记也跟着被覆盖）。
+    if (this.mode === MODE.NOTE) this.applyNote(d);
+    else if (this.mode === MODE.ERASE) this.applyErase();
+    else this.applyValue(d);
+                                       
+  }
+
+                          
+
+  applyValue(d) {
+    const idx = this.selected;
+    if (idx < 0) return;
+    if (this.puzzleState.status[idx] === 1) return;                 
+                                                                         
+    const r = setUserValue(this.puzzleState, idx, d);
+    if (!r.accepted) {
+                                            
+                                
+      return;
+    }
+                                         
+                     
+    this.puzzleState = r.state;
+    this.afterMutation();
+  }
+
+  applyNote(d) {
+    const idx = this.selected;
+    if (idx < 0) return;
+    if (this.puzzleState.status[idx] === 1) return;
+    if (this.puzzleState.values[idx] !== 0) return;                
+                                                           
+    this.puzzleState = toggleNote(this.puzzleState, idx, d);
+    this.afterMutation();
+  }
+
+  applyErase() {
+    const idx = this.selected;
+    if (idx < 0) return;
+    if (this.puzzleState.status[idx] === 1) return;                    
+                                        
+    this.puzzleState = clearCell(this.puzzleState, idx);
+                                  
+    this.afterMutation();
+  }
+
+                    
+  afterMutation() {
+    this.manualCheckActive = false;                     
+    this.renderAll();
+    this.scheduleSave();
+    this.checkCompletion();
+  }
+
+                                                        
+
+  checkCompletion() {
+                                               
+    const progress = getProgress(this.puzzleState);
+    if (progress.filled !== 81) return;
+
+    const truth = this.conflictTruthSet();
+    if (truth.size > 0) {
+                                                    
+      if (!this.fullWarnedForRound) {
+        this.fullWarnedForRound = true;
+        this.showToast('盘面已填满，但与唯一解不一致。请检查你的填写与笔记。');
+      }
+      return;
+    }
+
+    if (!isSolved(this.puzzleState)) return;
+    this.onSolved();
+  }
+
+  onSolved() {
+    if (this.pageState === 'COMPLETED') return;
+    this.pageState = 'COMPLETED';
+    this.timerFreeze();                                     
+
+                              
+                                                    
+                                                         
+                                          
+                                                       
+    const bandForStats = this.puzzleMeta.difficultyAchieved;
+    const bandForDisplay = this.puzzleMeta.difficulty;
+    const elapsed = this.elapsedMs();
+    const completedAt = Date.now();
+
+                      
+    if (!this.completionRecorded) {
+      this.completionRecorded = true;
+      const isRecord = countCompleted(this.stats, { band: bandForStats, elapsedMs: elapsed, completedAt });
+      this.storage.saveStats(this.stats);
+                                      
+      this.storage.clearSave();
+      if (this.saveTimer !== null) {
+        clearTimeout(this.saveTimer);
+        this.saveTimer = null;
+      }
+      this.showCompletePanel(elapsed, bandForDisplay, isRecord);
+    }
+  }
+
+  showCompletePanel(elapsed, band, isRecord) {
+    const label = DIFFICULTY_BANDS.find((b) => b.id === band);
+    const seed = this.puzzleMeta.seed;
+    this.dom.completeBody.innerHTML =
+      `<p class="complete__time">${formatDuration(elapsed)}</p>` +
+      (isRecord ? '<p class="complete__record">新纪录</p>' : '') +
+      `<dl class="complete__meta">` +
+      `<div><dt>难度</dt><dd>${label ? label.label : band}</dd></div>` +
+      `<div><dt>种子</dt><dd>${seed}</dd></div>` +
+      `</dl>`;
+    this.showOverlay(this.dom.completeOverlay);
+  }
+
+                                                      
+
+  pause(opts = {}) {
+    if (this.pageState !== 'PLAYING') return;
+    this.pageState = 'PAUSED';
+    this.timerFreeze();                          
+    this.flushSave();                                 
+    if (!opts.silent) this.showPauseOverlay();
+  }
+
+  resume() {
+    if (this.pageState !== 'PAUSED') return;
+    this.pageState = 'PLAYING';
+    this.hideOverlay(this.dom.pauseOverlay);
+                             
+    this.timerStart();
+    this.renderAll();
+  }
+
+  quitToMenu() {
+    if (this.pageState === 'PLAYING' || this.pageState === 'PAUSED') {
+      this.timerFreeze();
+      this.flushSave();                                   
+    }
+    this.stats = this.storage.loadStats();
+    this.renderMenu();
+  }
+
+  runManualCheck() {
+                                   
+    const mistakes = getMistakes(this.puzzleState);
+    this.manualCheckActive = mistakes.length > 0;
+                              
+    this.dom.pauseStats.textContent = mistakes.length === 0
+      ? '与唯一解一致'
+      : `${mistakes.length} 处不一致`;
+    this.renderBoard();
+  }
+
+                                                             
+
+                              
+  conflictTruthSet() {
+    return computeConflictTruth(this.puzzleState.values);
+  }
+
+                                     
+  conflictVisualSet() {
+    return presentConflicts(this.conflictTruthSet(), {
+      errorHints: this.settings.errorHints,
+      manualCheckActive: this.manualCheckActive,
+    });
+  }
+
+                                                      
+
+  renderAll() {
+    this.renderBoard();
+    this.renderKeypad();
+    this.renderStatus();
+    this.updateTimerDisplay();
+  }
+
+  renderBoard() {
+    const values = this.puzzleState.values;
+    const selected = this.selected >= 0 && this.puzzleState.status[this.selected] !== 1
+      ? this.selected
+      : this.selected;
+
+                                  
+    const highlight = computeHighlight(values, selected, this.settings);
+
+    renderBoard(this.dom.board, {
+      values,
+      status: this.puzzleState.status,
+      notes: this.puzzleState.notes,
+      selected,
+      highlight,
+      conflicts: this.conflictVisualSet(),
+      focusIndex: selected,
+    });
+  }
+
+  renderKeypad() {
+    const remaining = remainingCounts(this.puzzleState.values);
+                                          
+    let noteState = null;
+    if (this.mode === MODE.NOTE && this.selected >= 0) {
+      const mask = this.puzzleState.notes[this.selected];
+      noteState = {};
+      for (let d = 1; d <= 9; d++) noteState[d] = (mask & (1 << (d - 1))) !== 0;
+    }
+    updateKeypad(this.keypadRefs, { remaining, mode: this.mode, noteState });
+  }
+
+  renderStatus() {
+    const progress = getProgress(this.puzzleState);
+    const empty = 81 - progress.filled;
+    this.dom.statusLeft.textContent = `剩余 ${empty} / 81`;
+                                          
+    const label = DIFFICULTY_BANDS.find((b) => b.id === this.puzzleMeta.difficulty);
+    this.dom.statusRight.textContent =
+      `${label ? label.label : ''} · 种子 ${this.puzzleMeta.seed}`;
+  }
+
+                                                      
+
+  scheduleSave() {
+    if (this.saveTimer !== null) clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      this.flushSave();
+    }, SAVE_DEBOUNCE_MS);
+  }
+
+   
+                              
+                             
+                                                           
+     
+  flushSave() {
+    if (this.pageState === 'COMPLETED') return;                 
+    if (!this.puzzleState || !this.puzzleMeta) return;
+    if (this.saveTimer !== null) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+                       
+    const snapshotElapsed = this.elapsedMs();
+    const notesArr = [];
+    for (let i = 0; i < 81; i++) {
+      const mask = this.puzzleState.notes[i];
+      const arr = [];
+      if (mask !== 0) {
+        for (let d = 1; d <= 9; d++) if (mask & (1 << (d - 1))) arr.push(d);
+      }
+      notesArr.push(arr);
+    }
+    this.storage.saveGame({
+      puzzle: {
+        id: this.puzzleMeta.id,
+        seed: this.puzzleMeta.seed,
+        difficulty: this.puzzleMeta.difficulty,
+        difficultyAchieved: this.puzzleMeta.difficultyAchieved,
+        degraded: this.puzzleMeta.degraded,
+        givens: Array.from(this.puzzleMeta.givens),
+        solution: Array.from(this.puzzleMeta.solution),
+      },
+      progress: {
+        values: Array.from(this.puzzleState.values),
+        status: Array.from(this.puzzleState.status),
+        notes: notesArr,
+                                    
+        elapsedMs: snapshotElapsed,
+        startedAt: this.puzzleState.createdAt,
+        lastMoveAt: Date.now(),
+      },
+      completion: null,
+    });
+  }
+
+                                                      
+
+  applySettings() {
+    document.body.classList.toggle('no-timer', !this.settings.timerVisible);
+    this.updateTimerDisplay();
+  }
+
+  openSettings() {
+    const defs = [
+      { key: 'highlightPeers', label: '同行列宫高亮' },
+      { key: 'highlightSameDigit', label: '相同数字高亮' },
+      { key: 'errorHints', label: '错误提示' },
+      { key: 'timerVisible', label: '显示计时器' },
+    ];
+    this.dom.settingsBody.innerHTML = '';
+    // 2026-10-22：设置项一直是"拨了就存"，但界面上没有任何交代，
+    // 用户会去找"保存"按钮。这里给一行说明（不新增按钮，避免出现两个真相）。
+    const hint = document.createElement('p');
+    hint.className = 'setting__hint';
+    hint.textContent = '设置会被自动保存，下次打开仍然生效';
+    this.dom.settingsBody.appendChild(hint);
+    for (const def of defs) {
+      const row = document.createElement('div');
+      row.className = 'setting';
+      const id = `set-${def.key}`;
+      row.innerHTML =
+        `<label class="setting__label" for="${id}">${def.label}</label>` +
+        `<input class="setting__toggle" type="checkbox" id="${id}" role="switch" ` +
+        `aria-checked="${this.settings[def.key] ? 'true' : 'false'}" ${this.settings[def.key] ? 'checked' : ''}>`;
+      const input = row.querySelector('input');
+      input.addEventListener('change', () => {
+        this.settings[def.key] = input.checked;
+        input.setAttribute('aria-checked', input.checked ? 'true' : 'false');
+                                             
+        this.storage.saveSettings(this.settings);
+        this.applySettings();
+        if (this.puzzleState) this.renderAll();
+      });
+      this.dom.settingsBody.appendChild(row);
+    }
+    this.showOverlay(this.dom.settingsOverlay);
+  }
+
+  closeSettings() { this.hideOverlay(this.dom.settingsOverlay); }
+
+  openStats() {
+                                  
+    renderStats(this.dom.statsBody, {
+      stats: this.stats,
+      noPersistMode: this.storage.noPersistMode,
+    });
+    this.showOverlay(this.dom.statsOverlay);
+  }
+
+  closeStats() { this.hideOverlay(this.dom.statsOverlay); }
+
+                                                          
+
+  onKeyDown(e) {
+                   
+    if (e.key === 'Escape') {
+      if (!this.dom.settingsOverlay.hidden) { this.closeSettings(); return; }
+      if (!this.dom.statsOverlay.hidden) { this.closeStats(); return; }
+      if (this.pageState === 'PAUSED') { this.resume(); return; }
+      if (this.pageState === 'PLAYING') { e.preventDefault(); this.pause(); return; }
+      return;
+    }
+
+    if (this.pageState === 'COMPLETED') {
+      if (e.key === 'Enter') { e.preventDefault(); this.dom.againBtn.click(); }
+      return;
+    }
+
+    if (this.pageState === 'MENU') return;
+
+    if (this.pageState === 'PAUSED') return;
+
+                      
+    if (e.key === ' ' || e.code === 'Space') {
+      e.preventDefault();
+      this.pause();
+      return;
+    }
+
+                     
+    if (e.key === 'n' || e.key === 'N') {
+      e.preventDefault();
+      this.setMode(this.mode === MODE.NOTE ? MODE.NUMBER : MODE.NOTE);
+      return;
+    }
+
+                        
+    const dirs = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+    if (dirs[e.key]) {
+      e.preventDefault();
+      if (this.selected < 0) this.selected = 0;
+      const [dr, dc] = dirs[e.key];
+      this.selected = moveSelection(
+        this.selected, dr, dc, this.puzzleState.values, e.shiftKey
+      );
+      this.renderAll();
+      return;
+    }
+
+                   
+    if (e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') {
+      e.preventDefault();
+      this.applyErase();
+      return;
+    }
+
+                   
+    if (e.key >= '1' && e.key <= '9') {
+      e.preventDefault();
+      const d = Number(e.key);
+      this.lastDigit = d;
+      if (e.shiftKey) {
+                             
+        if (this.selected >= 0 && this.puzzleState.status[this.selected] !== 1) {
+          this.selected = this.selected;
+          this.applyNote(d);
+        }
+      } else {
+        this.onDigitKey(d);
+      }
+    }
+  }
+
+                                                         
+
+  showOverlay(el) {
+    el.hidden = false;
+                       
+    const first = el.querySelector('button, [href], input, [tabindex]:not([tabindex="-1"])');
+    if (first) first.focus();
+  }
+
+  hideOverlay(el) { el.hidden = true; }
+
+  showLoading(on) {
+    this.dom.loading.hidden = !on;
+    if (on) this.dom.loadingText.textContent = '正在生成…';
+  }
+
+  showToast(text) {
+    const el = this.dom.toast;
+    el.textContent = text;
+    el.hidden = false;
+    el.setAttribute('role', 'status');
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => { el.hidden = true; }, 4000);
+  }
+
+  showPauseOverlay() {
+    this.dom.pauseStats.textContent = '';
+    this.showOverlay(this.dom.pauseOverlay);
+  }
+
+                                                        
+
+   
+                                   
+                                                                 
+                                                  
+     
+  exposeDebugHooks() {
+    const self = this;
+    window.__sudoku = {
+                                                                    
+      countSolutions(board, limit = 2) {
+        return countSolutions(board, limit);
+      },
+      generatePuzzle(opts) {
+        const r = generatePuzzle(opts);
+        return {
+          puzzle: Array.from(r.puzzle),
+          solution: Array.from(r.solution),
+          score: r.difficulty.score,
+          band: r.difficulty.band,
+          bandLabel: r.difficulty.bandLabel,
+          seed: r.seed,
+        };
+      },
+      getState() {
+        if (!self.puzzleState) return null;
+        return {
+          values: Array.from(self.puzzleState.values),
+          status: Array.from(self.puzzleState.status),
+          notes: Array.from(self.puzzleState.notes),
+          selected: self.selected,
+          mode: self.mode,
+          pageState: self.pageState,
+          elapsedMs: self.elapsedMs(),
+          settings: { ...self.settings },
+        };
+      },
+      setState(snapshot) {
+        if (!snapshot) return false;
+        if (snapshot.values) self.puzzleState.values = Uint8Array.from(snapshot.values);
+        if (snapshot.status) self.puzzleState.status = Uint8Array.from(snapshot.status);
+        if (snapshot.notes) self.puzzleState.notes = Int16Array.from(snapshot.notes);
+        if (typeof snapshot.selected === 'number') self.selected = snapshot.selected;
+        if (snapshot.mode) self.mode = snapshot.mode;
+        if (typeof snapshot.elapsedMs === 'number') self.timerRestore(snapshot.elapsedMs);
+        self.renderAll();
+        return true;
+      },
+                                             
+      verifyCurrent() {
+        if (!self.puzzleState) return null;
+        return countSolutions(self.puzzleState.values, 2);
+      },
+                     
+      _internals: {
+        get conflictTruth() { return Array.from(self.conflictTruthSet()); },
+        get conflictVisual() { return Array.from(self.conflictVisualSet()); },
+        get progress() { return self.puzzleState ? getProgress(self.puzzleState) : null; },
+        get savedSave() { return window.localStorage.getItem('sudoku.v1.save'); },
+        get storage() { return self.storage; },
+        get timer() { return { ...self.timer, elapsed: self.elapsedMs() }; },
+        get puzzleMeta() { return self.puzzleMeta; },
+      },
+             
+      newGame: (band) => self.newGame(band),
+      select: (i) => { self.selected = i; self.renderAll(); },
+      press: (d) => self.onDigitKey(d),
+      erase: () => self.applyErase(),
+      setMode: (m) => self.setMode(m),
+      flushSave: () => self.flushSave(),
+    };
+  }
+}
+
+return { App };
+});
+
+
+// ══════════════ 引擎入口 ══════════════
+var ENGINE = __req('index.js');
+
+// 内联打包完整性断言。
+// 工程线曾踩过：正则扫 export 收集符号名时把注释当成符号名，createPuzzleState
+// 静默丢失，而符号总数恰好仍是 71 —— 最容易骗过"数量对上了"的检查。
+// 所以这里断言的是「必需符号逐个存在」，不是「总数等于某个数」。
+(function () {
+  var REQUIRED = ['generatePuzzle', 'createPuzzleState', 'setUserValue', 'toggleNote',
+    'boardToString', 'countSolutions', 'solve', 'DIFFICULTY_BANDS', 'snapshot', 'restore'];
+  var missing = REQUIRED.filter(function (k) { return typeof ENGINE[k] === 'undefined'; });
+  if (missing.length) console.error('[sudoku] 内联引擎符号缺失:', missing);
+  console.assert(missing.length === 0, '内联引擎导出符号不完整: ' + missing.join(','));
+})();
+
+// ══════════════ Worker（http 下可用，file:// 下自动降级）══════════════
+var WORKER_BODY = "/**\n * worker.js —— 题目生成 Worker\n *\n * 引擎实测：expert/master 档生成 P90 为 90–136ms，超一帧预算 5–8 倍，\n * 桌面端会明显冻结；移动端更慢（2-4 倍）。必须异步。\n *\n * 引擎是纯逻辑、零 DOM 依赖、无 Node 专属 API（已实测确认不含\n * document / window / navigator / require / process），可直接放进 Worker\n * 无需任何代码改动。\n *\n * 传输用 Transferable：Uint8Array 的 buffer 零拷贝转移。\n */\n\nconst { generatePuzzle } = __ENGINE__;\n\nself.onmessage = (e) => {\n  const { difficulty, seed, id } = e.data;\n  try {\n    const result = generatePuzzle({ difficulty, seed });\n    self.postMessage(\n      {\n        ok: true,\n        id,\n        puzzle: result.puzzle,\n        solution: result.solution,\n        difficulty: {\n          score: result.difficulty.score,\n          band: result.difficulty.band,\n          bandLabel: result.difficulty.bandLabel,\n          holes: result.difficulty.holes,\n          given: result.difficulty.given,\n          unique: result.difficulty.unique,\n        },\n        seed: result.seed,\n        holes: result.holes,\n      },\n      // Transferable：零拷贝。转出后主线程拿到的是原 buffer\n      [result.puzzle.buffer, result.solution.buffer]\n    );\n  } catch (err) {\n    self.postMessage({ ok: false, id, error: String(err && err.message || err) });\n  }\n};\n";
+var WORKER_URL = null;
+try {
+  if (WORKER_BODY) {
+    var full = WORKER_BODY + '\n//# sourceURL=sudoku-worker.js';
+    var blob = new Blob([full], { type: 'text/javascript' });
+    WORKER_URL = URL.createObjectURL(blob);
+  }
+} catch (e) { WORKER_URL = null; }
+
+// ══════════════ 启动 ══════════════
+function boot() {
+  var App = __req('app.js').App;
+  var app = new App({
+    menu: document.getElementById('menu'),
+    game: document.getElementById('game'),
+  });
+  // 把 Worker 入口挂给 app，供策略 A 使用；失败则 app 走策略 C 降级
+  app.workerUrl = WORKER_URL;
+  app.engine = ENGINE;
+  app.start();
+  window.__sudokuApp = app;
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
+})();
+
+</script>
+
+<script>
+/* ============================================================================
+   视口单位兼容修正（v1.1.78，Android WebView）
+   ----------------------------------------------------------------------------
+   背景：部分 WebView 内核（实测 Android 13 模拟器）把「布局视口」的高度记为 0，
+   于 CSS 里 `100vh` / `100dvh` 恒等于 0、`matchMedia` 的 height 特性恒为 0，
+   而 `window.innerHeight` 却是正常的（如 746）。
+
+   这一页的尺寸体系完全建立在 vh/dvh 上：
+   - `--cell` 的高度约束项 → 求值为负数 → 被 clamp 压到 24px 下限（棋盘缩成一团）；
+   - `--key-min` / `--mode-h` → 压到 44px 下限（键盘挤成一条）；
+   - `body` 的 `height:100dvh` → 0（键盘贴不到底）。
+   同时 `max-height` 媒体查询恒为真，还会误命中「矮视口」分支。
+
+   做法：先**特性探测**（量一个 100vh 的空 div）。只有确实坏掉时才用
+   `innerHeight` / `innerWidth` 把上面几个自定义属性按页面原有公式重算成像素值；
+   在正常浏览器里探测通过，本段一行都不生效，页面行为与之前完全一致。
+   ========================================================================== */
+(function () {
+  function vhIsBroken() {
+    var probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:100vh';
+    document.body.appendChild(probe);
+    var height = probe.getBoundingClientRect().height;
+    document.body.removeChild(probe);
+    return height < 10;
+  }
+
+  if (!vhIsBroken()) return;
+
+  function applyMetrics() {
+    var vh = window.innerHeight;
+    var vw = window.innerWidth;
+    if (vh < 10 || vw < 10) return;
+
+    /* 与样式表里 :root 的公式逐项一致（改那里时要同步改这里）：
+       --key-min: clamp(44px, 7vh, 66px)
+       --mode-h : clamp(44px, 5.6vh, 48px)
+       --hud-h  : 168px + mode-h + 3 * key-min
+       --cell   : clamp(24px, min((avail-w-10)/9, (vh-hud-10)/9), 62px)
+       （--avail-w = 视口宽 - 2*8px 边距；安全区按 0 计，WebView 里为 0） */
+    var keyMin = Math.min(66, Math.max(44, vh * 0.07));
+    var modeH = Math.min(48, Math.max(44, vh * 0.056));
+    var hud = 168 + modeH + 3 * keyMin;
+    var availW = vw - 16;
+    var cell = Math.min(62, Math.max(24, Math.min((availW - 10) / 9, (vh - hud - 10) / 9)));
+
+    var root = document.documentElement.style;
+    root.setProperty('--key-min', keyMin + 'px');
+    root.setProperty('--mode-h', modeH + 'px');
+    root.setProperty('--hud-h', hud + 'px');
+    root.setProperty('--cell', cell + 'px');
+    /* body 的 height/min-height:100dvh 同样为 0：改为实际视口高度，
+       这样「键盘贴底 + 页面不满溢」的既有布局意图才成立。 */
+    document.body.style.height = vh + 'px';
+    document.body.style.minHeight = vh + 'px';
+
+    /* 弹层（设置 / 统计 / 暂停 / 完成）的 `.panel` 写的是 `max-height: 85vh/85dvh`，
+       在 vh 恒为 0 的 WebView 里会塌成 0 高——表现为"点设置后只看到一条、按钮没了"。
+       改成相对父级（.overlay 是 fixed inset:0，所以 85% = 屏幕高度的 85%）即可。 */
+    if (!window.__cimPanelFix) {
+      window.__cimPanelFix = true;
+      var style = document.createElement('style');
+      style.textContent = '.panel { max-height: 85% !important; }';
+      document.head.appendChild(style);
+    }
+  }
+
+  applyMetrics();
+  window.addEventListener('resize', applyMetrics);
+  window.addEventListener('orientationchange', function () { setTimeout(applyMetrics, 120); });
+})();
+</script>
+
+</body>
+</html>

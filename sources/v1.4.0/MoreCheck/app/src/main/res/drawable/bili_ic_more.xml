@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24.000000dp"
+    android:height="24.000000dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <!-- 2026-11-24：三点半径 2.2→3，视觉笔画加粗。 -->
+  <path android:fillColor="#ffffffff"
+        android:pathData="M6,12 m-3,0 a3,3 0 1,1 6,0 a3,3 0 1,1 -6,0 z" />
+  <path android:fillColor="#ffffffff"
+        android:pathData="M12,12 m-3,0 a3,3 0 1,1 6,0 a3,3 0 1,1 -6,0 z" />
+  <path android:fillColor="#ffffffff"
+        android:pathData="M18,12 m-3,0 a3,3 0 1,1 6,0 a3,3 0 1,1 -6,0 z" />
+</vector>

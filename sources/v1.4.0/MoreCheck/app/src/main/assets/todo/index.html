@@ -1,0 +1,2534 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#2f6df6" />
+  <meta name="description" content="待办清单：新增、勾选、删除、图片备注，全部保留，数据云端保存。" />
+  <title>今日待办</title>
+  <style>
+    :root {
+      --primary: #2f6df6;
+      --wx: #07c160;
+      --bg: #f2f4f8;
+      --card: #ffffff;
+      --text: #1c2330;
+      --muted: #8a93a6;
+      --line: #e7eaf0;
+      --danger: #e5484d;
+      --ok: #2bb673;
+      --warn: #b7791f;
+      --shadow: 0 8px 30px rgba(28, 35, 48, 0.08);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    /* ⚠️ 满高不要指望视口单位（2026-10-29 真机实测）：本 WebView 里 `xx vh` 恒为 0px
+       （新建 height:88vh 的探针 div 量出来也是 0），连 `height:100%` 都算成 0。
+       所以底部弹窗的高度上限改用**百分比**——它相对的是 `position: fixed; inset: 0`
+       的遮罩（高度确定，实测 695），这条路是通的；`vh` 会把弹窗压成只剩 padding 高，
+       内容全部溢出到视口下方，表现就是"弹窗过低、点不到"。 */
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 16px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    /* 这一行的 100vh 在当前 WebView 里同样算成 0（见上面的说明），即"没有最小高度"，
+       与本次弹窗问题无关，保持原样不动。 */
+    .app { max-width: 480px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+    .hidden { display: none !important; }
+
+    /* ---------- Login ---------- */
+    .login-wrap { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 28px 22px; }
+    .brand { text-align: center; margin-bottom: 26px; }
+    .brand .logo {
+      width: 64px; height: 64px; border-radius: 18px; margin: 0 auto 14px;
+      background: linear-gradient(135deg, #2f6df6, #5b8dff); display: flex; align-items: center; justify-content: center;
+      font-size: 32px; color: #fff; box-shadow: var(--shadow);
+    }
+    .brand h1 { font-size: 24px; margin: 0 0 6px; font-weight: 700; }
+    .brand p { margin: 0; color: var(--muted); font-size: 14px; }
+
+    .btn {
+      border: 0; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 600; cursor: pointer;
+      background: var(--primary); color: #fff; transition: .15s; width: 100%;
+    }
+    .btn:active { transform: scale(.99); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    .btn.wb { background: var(--wx); margin-bottom: 10px; }
+    .btn.wx { background: #1aad19; margin-bottom: 10px; }
+    .btn.code { width: auto; white-space: nowrap; padding: 14px 16px; flex: 0 0 auto; }
+    .btn.ghost { background: #eef2fa; color: #3d4a68; }
+    .btn.danger { background: #fdeaea; color: var(--danger); }
+
+    .divider { display: flex; align-items: center; color: var(--muted); font-size: 12px; margin: 18px 0; }
+    .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+    .divider span { padding: 0 12px; }
+
+    .tabs { display: flex; background: var(--card); border-radius: 12px; padding: 4px; margin-bottom: 18px; box-shadow: var(--shadow); }
+    .tabs button {
+      flex: 1; border: 0; background: transparent; padding: 11px 0; font-size: 15px; font-weight: 600;
+      color: var(--muted); border-radius: 9px; cursor: pointer; transition: .2s;
+    }
+    .tabs button.active { background: var(--primary); color: #fff; }
+
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    .field .row { display: flex; gap: 10px; }
+    input {
+      width: 100%; padding: 14px 14px; font-size: 16px; border: 1px solid var(--line); border-radius: 12px;
+      background: #fff; color: var(--text); outline: none; transition: border-color .15s;
+    }
+    input:focus { border-color: var(--primary); }
+    .msg { font-size: 13px; margin-top: 12px; min-height: 18px; text-align: center; }
+    .msg.err { color: var(--danger); }
+    .msg.info { color: var(--ok); }
+    .hint { text-align: center; color: var(--muted); font-size: 12px; margin-top: 18px; }
+    .last-account {
+      display: none; align-items: center; gap: 8px; background: #eef4ff; border: 1px solid #d6e4ff;
+      border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; font-size: 13px; color: #2f5fd0;
+    }
+    .last-account.show { display: flex; }
+    .last-account .txt { flex: 1; }
+
+    /* ---------- App ---------- */
+    .topbar {
+      position: sticky; top: 0; z-index: 5; background: linear-gradient(135deg, #2f6df6, #5b8dff);
+      color: #fff; padding: 18px 18px 16px; border-radius: 0 0 22px 22px;
+    }
+    .topbar .title-row { display: flex; align-items: center; justify-content: space-between; }
+    .topbar h2 { margin: 0; font-size: 20px; font-weight: 700; }
+    .topbar .user { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .topbar .avatar {
+      width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,.25);
+      display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px;
+      border: 0; padding: 0; overflow: hidden; cursor: pointer; color: #fff;
+    }
+    .topbar .avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .topbar .logout { background: rgba(255,255,255,.18); border: 0; color: #fff; font-size: 12px;
+      padding: 5px 10px; border-radius: 20px; cursor: pointer; }
+    .topbar .date { font-size: 13px; opacity: .9; margin: 6px 0 12px; }
+    .stat { display: flex; gap: 10px; }
+    .stat .pill { background: rgba(255,255,255,.15); border-radius: 12px; padding: 8px 14px; flex: 1; }
+    .stat .pill .n { font-size: 22px; font-weight: 700; line-height: 1.1; }
+    .stat .pill .t { font-size: 12px; opacity: .9; }
+
+    .filter-bar { display: flex; gap: 8px; padding: 14px 16px 2px; overflow-x: auto; }
+    .chip {
+      border: 1px solid var(--line); background: var(--card); color: var(--muted);
+      border-radius: 20px; padding: 7px 14px; font-size: 13px; cursor: pointer; white-space: nowrap;
+    }
+    .chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+    .add-bar { display: flex; gap: 10px; padding: 12px 16px 6px; }
+    .add-bar input { flex: 1; }
+    .add-bar .btn { width: auto; flex: 0 0 auto; padding: 14px 20px; }
+
+    .list { list-style: none; margin: 8px 0 0; padding: 8px 14px 90px; }
+    .group-title {
+      font-size: 12px; color: var(--muted); padding: 14px 4px 6px; letter-spacing: .3px;
+    }
+    .item {
+      display: flex; align-items: flex-start; gap: 12px; background: var(--card); border-radius: 14px;
+      padding: 14px 14px; margin-bottom: 10px; box-shadow: 0 2px 10px rgba(28,35,48,.04);
+      animation: pop .18s ease;
+    }
+    @keyframes pop { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    .check {
+      width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); flex: 0 0 auto;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; transition: .15s; background: #fff;
+      margin-top: 2px;
+    }
+    .check.done { background: var(--ok); border-color: var(--ok); }
+    .check.done svg { display: block; }
+    .item .body { flex: 1; min-width: 0; }
+    .item .text { font-size: 16px; word-break: break-word; }
+    .item.done .text { color: var(--muted); text-decoration: line-through; }
+    .item .meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .item .thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .item .thumbs img {
+      width: 56px; height: 56px; object-fit: cover; border-radius: 8px; background: #f0f2f7;
+      border: 1px solid var(--line); cursor: pointer;
+    }
+    .side-btns { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+    .icon-btn {
+      border: 0; background: #f2f5fb; color: #5a6b8c; width: 32px; height: 32px;
+      border-radius: 9px; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+    .icon-btn:active { background: #e6ebf5; }
+    .icon-btn.danger:active { background: #fdeaea; }
+    .empty { text-align: center; color: var(--muted); padding: 60px 20px; }
+    .empty .big { font-size: 40px; margin-bottom: 10px; }
+
+    .toast {
+      position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); background: #1c2330; color: #fff;
+      padding: 11px 18px; border-radius: 12px; font-size: 14px; box-shadow: var(--shadow); opacity: 0;
+      transition: opacity .2s; pointer-events: none; max-width: 86%; text-align: center; z-index: 60;
+    }
+    .toast.show { opacity: 1; }
+    /* 撤销条出现时把 toast 抬高一档，两者不叠在一起。 */
+    .toast.above { bottom: 92px; }
+
+    /* ---------- 一键登录（沿用打卡账号）---------- */
+    .native-login {
+      background: #eaf1ff; color: var(--primary); border: 1px solid #cddcff;
+      display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 10px;
+    }
+    .native-login .tag {
+      font-size: 11px; font-weight: 500; background: rgba(47, 109, 246, .14);
+      border-radius: 6px; padding: 2px 6px;
+    }
+    .native-login:active { background: #dfe8ff; }
+
+    /* ---------- 页面内二次确认（风格同本页按钮，不用系统弹窗）---------- */
+    .confirm-mask {
+      position: fixed; inset: 0; background: rgba(16, 22, 34, .45); z-index: 80;
+      display: none; align-items: center; justify-content: center; padding: 24px;
+    }
+    .confirm-mask.show { display: flex; }
+    .confirm-box {
+      width: 100%; max-width: 340px; background: var(--card); border-radius: 18px;
+      padding: 22px 20px 16px; box-shadow: var(--shadow); animation: pop .18s ease;
+    }
+    .confirm-box h3 { margin: 0 0 8px; font-size: 17px; font-weight: 700; }
+    .confirm-box p { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.55; }
+    .confirm-actions { display: flex; gap: 10px; margin-top: 20px; }
+    .confirm-actions .btn { padding: 12px; font-size: 15px; flex: 1; }
+    .confirm-actions .btn.ghost { background: #f2f4f8; color: var(--text); border: 1px solid var(--line); }
+    /* ⚠️ 必须显式写 color：#fff。上面已有 `.btn.danger { color: var(--danger) }`
+       （浅红底 + 红字那套），只改 background 会得到"红底红字"= 看不见文字。 */
+    .confirm-actions .btn.danger { background: var(--danger); color: #fff; }
+
+    /* ---------- 长按图片的选项面板（保存 / 分享 / 删除）----------
+       图片长按原本只有"直接保存"一个动作，用户想要"保存 or 分享"无从选择。
+       这里用页面内的底部面板（不用系统弹窗：WebView 里的 alert/confirm 与
+       本页风格不搭，而且原生 AlertDialog 会盖住灯箱的沉浸感）。 */
+    .action-mask {
+      position: fixed; inset: 0; background: rgba(16, 22, 34, .45); z-index: 75;
+      display: none; align-items: flex-end; justify-content: center;
+      opacity: 0; transition: opacity .16s ease;
+    }
+    .action-mask.show { display: flex; opacity: 1; }
+    .action-sheet {
+      width: 100%; max-width: 480px; background: var(--card);
+      border-radius: 18px 18px 0 0; padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
+      box-shadow: var(--shadow); box-sizing: border-box;
+      transform: translateY(14px); transition: transform .18s ease;
+    }
+    .action-mask.show .action-sheet { transform: none; }
+    .action-title {
+      font-size: 12px; color: var(--muted); text-align: center; padding: 8px 4px 10px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .action-item {
+      width: 100%; border: 0; background: transparent; color: var(--text);
+      font-size: 16px; padding: 14px 10px; border-radius: 12px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .action-item:active { background: #eef2fa; }
+    .action-item + .action-item { margin-top: 2px; }
+    .action-item.danger { color: var(--danger); }
+    .action-item.cancel { color: var(--muted); font-size: 15px; border-top: 1px solid var(--line);
+      margin-top: 6px; border-radius: 0 0 12px 12px; }
+
+    /* ---------- 删除撤销条 ----------
+       ⚠️ 宽度必须靠 left+right 撑开，不能再写 `left:50% + translateX(-50%) + max-width`：
+       fixed 元素在这种写法下取的是 **shrink-to-fit** 宽度，而里面的 `.txt` 是
+       `flex: 1`（flex-basis:0），对容器的 max-content 贡献为 0 → 整条按"按钮宽度"收窄，
+       文字被 ellipsis 截成「已删除 1 张备…」。改成左右各留 16px 后是满宽，
+       文字有足够空间，长内容也只会吃掉自己的省略号。 */
+    .undo-bar {
+      position: fixed; left: 16px; right: 16px; bottom: 26px; transform: translateY(12px);
+      display: flex; align-items: center; gap: 14px; background: #1c2330; color: #fff;
+      padding: 12px 14px 12px 16px; border-radius: 14px; box-shadow: var(--shadow);
+      font-size: 14px; opacity: 0; pointer-events: none; z-index: 65;
+      transition: opacity .18s ease, transform .18s ease;
+      box-sizing: border-box;
+    }
+    .undo-bar.show { opacity: 1; transform: none; pointer-events: auto; }
+    .undo-bar .txt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .undo-bar button {
+      border: 0; background: rgba(255, 255, 255, .14); color: #9dc0ff; font-size: 14px; font-weight: 600;
+      padding: 7px 12px; border-radius: 9px; cursor: pointer; flex: 0 0 auto;
+    }
+
+    /* ---------- 列表加载骨架（2026-10-30 需求 1）----------
+       进页面时列表还没回来，原先是一片空白突然变出内容；改成三条灰条 + 呼吸动画，
+       让「正在读」这件事本身可见。 */
+    .skel-item {
+      display: flex; align-items: flex-start; gap: 12px; background: var(--card); border-radius: 14px;
+      padding: 14px; margin-bottom: 10px;
+    }
+    .skel-dot { width: 24px; height: 24px; border-radius: 50%; flex: 0 0 auto; margin-top: 2px; }
+    .skel-lines { flex: 1; min-width: 0; }
+    .skel-line { height: 13px; border-radius: 7px; }
+    .skel-line + .skel-line { margin-top: 9px; }
+    .skel-dot, .skel-line {
+      background: linear-gradient(90deg, #eef1f7 25%, #e3e8f2 37%, #eef1f7 63%);
+      background-size: 400% 100%; animation: skel 1.3s ease-in-out infinite;
+    }
+    @keyframes skel { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
+
+    /* ---------- 缩略图占位（2026-10-30 需求 1）----------
+       签名 URL 是异步取的：先放一个同尺寸的灰块，取到再填图。
+       原先直接塞一个没有 src 的 <img>，会先出现"破图/空白方块"再跳成图片。 */
+    .item .thumbs .thumb {
+      width: 56px; height: 56px; border-radius: 8px; border: 1px solid var(--line);
+      background: linear-gradient(90deg, #eef1f7 25%, #e3e8f2 37%, #eef1f7 63%);
+      background-size: 400% 100%; animation: skel 1.3s ease-in-out infinite;
+      overflow: hidden; cursor: pointer; flex: 0 0 auto;
+    }
+    .item .thumbs .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .item .thumbs .thumb.ready { animation: none; background: #f0f2f7; }
+
+    /* ---------- 空内容提示：输入框抖一下 + 变红（2026-10-30 需求 2）---------- */
+    .add-bar input.warn {
+      border-color: var(--danger); background: #fff6f6; animation: shake .32s ease;
+    }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-6px); }
+      40% { transform: translateX(5px); }
+      60% { transform: translateX(-3px); }
+      80% { transform: translateX(2px); }
+    }
+    /* 「添加」按钮的转圈：文字先隐藏，避免按钮在 2 行文字 / 1 个圈之间跳高。 */
+    .add-bar .btn.busy { color: transparent; position: relative; pointer-events: none; }
+    .add-bar .btn.busy::after {
+      content: ''; position: absolute; left: 50%; top: 50%; width: 17px; height: 17px; margin: -9px 0 0 -9px;
+      border: 2px solid rgba(255, 255, 255, .45); border-top-color: #fff; border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---------- 个人简介 ---------- */
+    .sheet-mask {
+      position: fixed; inset: 0; background: rgba(16, 22, 34, .45); z-index: 50;
+      display: none; align-items: flex-end; justify-content: center;
+    }
+    .sheet-mask.show { display: flex; }
+    .sheet {
+      width: 100%; max-width: 480px; background: var(--bg); border-radius: 20px 20px 0 0;
+      /* 88% 而不是 88vh：遮罩是 fixed + inset:0（高度确定），百分比才有得算；
+         vh 在本 WebView 里恒为 0，会把整个弹窗压成 44px 高、内容溢出到屏幕外。 */
+      padding: 20px 18px calc(24px + env(safe-area-inset-bottom)); max-height: 88%; overflow-y: auto;
+      animation: rise .22s ease;
+    }
+    @keyframes rise { from { transform: translateY(18px); opacity: .6; } to { transform: none; opacity: 1; } }
+    .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .sheet-head h3 { margin: 0; font-size: 17px; font-weight: 700; }
+    .sheet-close { border: 0; background: #e9edf6; color: #5a6b8c; width: 30px; height: 30px;
+      border-radius: 50%; font-size: 18px; cursor: pointer; line-height: 1; }
+    .profile-card { background: var(--card); border-radius: 16px; padding: 18px; box-shadow: var(--shadow); }
+    .profile-top { display: flex; align-items: center; gap: 14px; }
+    .profile-avatar {
+      width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, #2f6df6, #5b8dff);
+      color: #fff; font-size: 26px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+      overflow: hidden; border: 0; cursor: pointer; flex: 0 0 auto;
+    }
+    .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .profile-name { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .profile-name .edit { font-size: 12px; color: var(--primary); font-weight: 500; cursor: pointer; }
+    .profile-sign { font-size: 13px; color: var(--muted); margin-top: 4px; word-break: break-word; }
+    .profile-rows { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 8px; }
+    .profile-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; font-size: 14px; }
+    .profile-row .k { color: var(--muted); flex: 0 0 auto; }
+    .profile-row .v { color: var(--text); word-break: break-all; text-align: right; }
+    .profile-stats { display: flex; gap: 10px; margin-top: 14px; }
+    .profile-stats .box { flex: 1; background: #f5f7fc; border-radius: 12px; padding: 10px; text-align: center; }
+    .profile-stats .box .n { font-size: 20px; font-weight: 700; }
+    .profile-stats .box .t { font-size: 12px; color: var(--muted); }
+    .profile-actions { margin-top: 14px; display: flex; gap: 10px; }
+    .profile-actions .btn { padding: 12px; font-size: 15px; }
+    .edit-field { margin-top: 12px; }
+    .edit-field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    .edit-field input { margin-bottom: 10px; }
+
+    /* ---------- 图片灯箱 ---------- */
+    .viewer {
+      position: fixed; inset: 0; background: rgba(10, 14, 22, .94); z-index: 70;
+      display: none; flex-direction: column; align-items: center; justify-content: center;
+      /* 打开动画：遮罩淡入。图片自己再走一层"缩放到 1"（见下图 .loaded）。 */
+      opacity: 0; transition: opacity .16s ease;
+    }
+    .viewer.show { display: flex; opacity: 1; }
+    /* 78%：父级 .viewer 是 fixed + inset:0，高度确定；78vh 在本 WebView 里是 0，图片会看不见。 */
+    .viewer img {
+      max-width: 100%; max-height: 78%; object-fit: contain;
+      /* 图片加载完成才置 .loaded：否则先看到一块"空黑"再突然跳出整张图。 */
+      opacity: 0; transform: scale(.94);
+      transition: opacity .18s ease, transform .2s cubic-bezier(.2, .8, .2, 1);
+      /* 长按图片时不要弹系统的"存储/分享图片"菜单，也不要选中文字：
+         保存走页面自己的长按判定（见 bindViewerGestures）。 */
+      -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+    }
+    .viewer img.loaded { opacity: 1; transform: none; }
+    .viewer-bar { position: absolute; top: 14px; right: 14px; display: flex; gap: 10px; }
+    .viewer-bar button {
+      border: 0; background: rgba(255,255,255,.18); color: #fff; width: 36px; height: 36px;
+      border-radius: 50%; font-size: 18px; cursor: pointer; line-height: 1;
+    }
+    .viewer-tip { color: rgba(255,255,255,.7); font-size: 12px; margin-top: 14px; }
+
+    /* ── Android 内嵌适配（MoreCheck 实验室）：────────────────────────
+       OAuth 授权需要整页跳转第三方域名，WebView 里的回调回不来，因此**只在
+       原生内嵌时**隐藏两个授权按钮，只保留「验证码登录」（纯接口调用，可正常工作）。
+
+       2026-10-31：这条规则加了 `body.native-embed` 前缀——同一份页面现在还要
+       上线成网页（用网址访问），浏览器里 OAuth 是能走通的，不能再一刀切隐藏。
+       内嵌与否由启动时的 `detectEmbedded()` 打标记（见脚本开头）。 */
+    body.native-embed #wbBtn, body.native-embed #wxBtn { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="app">
+
+    <!-- Login View -->
+    <div id="loginView" class="login-wrap">
+      <div class="brand">
+        <div class="logo">✓</div>
+        <h1>今日待办</h1>
+        <p>登录后，待办自动保存到云端</p>
+      </div>
+
+      <button id="nativeLogin" class="btn native-login hidden" type="button">
+        一键登录<span class="tag" id="nativeLoginTag">沿用打卡账号</span>
+      </button>
+
+      <button id="wbBtn" class="btn wb" type="button">使用 WorkBuddy 账号登录</button>
+      <button id="wxBtn" class="btn wx" type="button">微信登录</button>
+
+      <!-- 验证码登录与密码登录各用一块面板：密码方式登录本页自己的云身份，
+           与顶部「一键登录」的 App 账号互不干扰，切换只换表单。 -->
+      <div id="otpLoginBox">
+      <div class="divider"><span>使用验证码登录</span></div>
+
+      <div class="tabs">
+        <button id="tabPhone" class="active" type="button">手机号</button>
+        <button id="tabEmail" type="button">邮箱</button>
+      </div>
+
+      <div class="last-account" id="lastAccountBar">
+        <span class="txt" id="lastAccountText">上次登录：—</span>
+        <button class="btn code" id="lastAccountUse" type="button">填入</button>
+      </div>
+
+      <div class="field">
+        <label id="accountLabel">手机号</label>
+        <input id="accountInput" type="text" inputmode="numeric" placeholder="请输入 11 位手机号" autocomplete="username" />
+      </div>
+
+      <div class="field">
+        <label>验证码</label>
+        <div class="row">
+          <input id="codeInput" type="text" inputmode="numeric" placeholder="6 位验证码" />
+          <button id="codeBtn" class="btn code" type="button">获取验证码</button>
+        </div>
+      </div>
+
+      <button id="loginBtn" class="btn" type="button">登录 / 注册</button>
+      <div id="loginMsg" class="msg"></div>
+      <div class="hint">未注册的手机号 / 邮箱将自动创建账号</div>
+      <button id="pwdEntry" class="btn ghost" type="button" style="margin-top:10px">使用密码登录</button>
+      </div>
+
+      <div id="pwdLoginBox" class="hidden">
+      <div class="divider"><span>使用密码登录</span></div>
+      <div class="field">
+        <label for="pwdPhoneInput">手机号</label>
+        <input id="pwdPhoneInput" type="text" inputmode="numeric" placeholder="请输入 11 位手机号" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="pwdInput">密码</label>
+        <input id="pwdInput" type="password" placeholder="请输入密码" autocomplete="current-password" />
+      </div>
+      <button id="pwdLoginBtn" class="btn" type="button">登录</button>
+      <div id="pwdLoginMsg" class="msg"></div>
+      <button id="otpEntry" class="btn ghost" type="button" style="margin-top:10px">返回验证码登录</button>
+      </div>
+    </div>
+
+    <!-- App View -->
+    <div id="appView" class="hidden" style="flex:1; display:flex; flex-direction:column;">
+      <div class="topbar">
+        <div class="title-row">
+          <h2>今日待办</h2>
+          <div class="user">
+            <button class="avatar" id="avatar" type="button" aria-label="个人简介">我</button>
+            <button class="logout" id="logoutBtn" type="button">退出</button>
+          </div>
+        </div>
+        <div class="date" id="dateLabel">共 0 条 · 全部保留</div>
+        <div class="stat">
+          <div class="pill"><div class="n" id="remainN">0</div><div class="t">未完成</div></div>
+          <div class="pill"><div class="n" id="doneN">0</div><div class="t">已完成</div></div>
+          <div class="pill"><div class="n" id="totalN">0</div><div class="t">全部</div></div>
+        </div>
+      </div>
+
+      <div class="filter-bar" id="filterBar">
+        <button class="chip active" data-filter="all" type="button">全部</button>
+        <button class="chip" data-filter="active" type="button">未完成</button>
+        <button class="chip" data-filter="done" type="button">已完成</button>
+      </div>
+
+      <div class="add-bar">
+        <input id="newTodo" type="text" placeholder="添加一项待办…" />
+        <button class="btn" id="addBtn" type="button">添加</button>
+      </div>
+
+      <ul class="list" id="list"></ul>
+    </div>
+
+  </div>
+
+  <!-- 个人简介 -->
+  <div class="sheet-mask" id="profileMask">
+    <div class="sheet" id="profileSheet">
+      <div class="sheet-head">
+        <h3>个人简介</h3>
+        <button class="sheet-close" id="profileClose" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="profile-card">
+        <div class="profile-top">
+          <button class="profile-avatar" id="profileAvatar" type="button" aria-label="更换头像">我</button>
+          <div style="flex:1; min-width:0;">
+            <div class="profile-name"><span id="profileName">我</span><span class="edit" id="profileNameEdit">编辑</span></div>
+            <div class="profile-sign" id="profileSign">还没有个性签名</div>
+          </div>
+        </div>
+
+        <div class="profile-rows">
+          <div class="profile-row"><span class="k">账号</span><span class="v" id="profileAccount">—</span></div>
+          <div class="profile-row"><span class="k">用户 ID</span><span class="v" id="profileUid">—</span></div>
+          <div class="profile-row"><span class="k">加入时间</span><span class="v" id="profileJoined">—</span></div>
+        </div>
+
+        <div class="profile-stats">
+          <div class="box"><div class="n" id="pStatTotal">0</div><div class="t">待办总数</div></div>
+          <div class="box"><div class="n" id="pStatDone">0</div><div class="t">已完成</div></div>
+          <div class="box"><div class="n" id="pStatImages">0</div><div class="t">图片备注</div></div>
+        </div>
+
+        <div class="edit-field hidden" id="profileEditArea">
+          <label>昵称</label>
+          <input id="profileNameInput" type="text" maxlength="20" placeholder="给自己起个名字" />
+          <label>个性签名</label>
+          <input id="profileSignInput" type="text" maxlength="60" placeholder="一句话介绍自己" />
+          <div style="display:flex; gap:10px;">
+            <button class="btn ghost" id="profileEditCancel" type="button">取消</button>
+            <button class="btn" id="profileEditSave" type="button">保存</button>
+          </div>
+        </div>
+
+        <div class="profile-actions">
+          <button class="btn ghost" id="profileAvatarBtn" type="button">更换头像</button>
+          <button class="btn danger" id="profileLogout" type="button">退出登录</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 图片灯箱 -->
+  <div class="viewer" id="viewer">
+    <div class="viewer-bar">
+      <button id="viewerDelete" type="button" aria-label="删除图片">🗑</button>
+      <button id="viewerClose" type="button" aria-label="关闭">×</button>
+    </div>
+    <img id="viewerImg" alt="图片备注" />
+    <div class="viewer-tip" id="viewerTip">长按可保存或分享 · 点空白处关闭</div>
+  </div>
+
+  <!-- 长按图片的选项面板：灯箱里是「保存 / 分享」，列表缩略图上还有「删除」。
+       选项由 JS 动态铺（见 openImageActions），这里只留容器。 -->
+  <div class="action-mask" id="actionMask">
+    <div class="action-sheet">
+      <div class="action-title" id="actionTitle"></div>
+      <div id="actionItems"></div>
+    </div>
+  </div>
+
+  <input type="file" id="fileInput" accept="image/*" class="hidden" />
+
+  <!-- 页面内二次确认（退出登录等）。刻意不用 alert/confirm：
+       系统弹窗在 WebView 里长得像"另一个 App"，与本页按钮风格不一路。 -->
+  <div class="confirm-mask" id="confirmMask">
+    <div class="confirm-box">
+      <h3 id="confirmTitle">确认</h3>
+      <p id="confirmText"></p>
+      <div class="confirm-actions">
+        <button class="btn ghost" id="confirmCancel" type="button">取消</button>
+        <button class="btn" id="confirmOk" type="button">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 删除后的撤销条（5 秒内可撤销，超时才真正删云端那条） -->
+  <div class="undo-bar" id="undoBar">
+    <span class="txt" id="undoText">已删除</span>
+    <button id="undoBtn" type="button">撤销</button>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- SDK 本地自托管：不依赖外部 CDN。
+
+       2026-10-31 上线网页版：发布后的站点是「分享链接」形态
+       （`…/?sharecode=xxx`），**静态资源也必须带同一个 sharecode**，否则服务器
+       直接返回 403「链接不完整」——现象就是页面一片空白（SDK 没加载，脚本整体抛错）。
+       所以这里用 document.write 把当前查询串原样拼给 SDK 的 URL；
+       在 App 的 WebView 里没有查询串，拼出来与原来完全一致。 -->
+  <script>
+    (function () {
+      var q = location.search || '';
+      document.write('<scr' + 'ipt src="./workbuddy-cloud-sdk.js' + q + '"><\/scr' + 'ipt>');
+    })();
+  </script>
+  <script>
+    (function () {
+      /* ── 2026-10-29 账号合并 ─────────────────────────────────────────
+       * 本页原来连的是独立的「今日待办」云应用（today-todo-50052）。现在改成
+       * **打卡那个云应用**（morecheck-sync）：
+       *
+       *   一个云应用 = 一个用户池 = 一个 auth.uid()。
+       *   三处登录的是同一个账号，数据落在同一个库里，原生侧那份会话也能直接给本页用。
+       *
+       * endpoint / publishableKey 必须与 `CloudConfig.kt` 里的一模一样：
+       * 客户端标识不同 = 会话被判「issued for another client」= 一律 401。
+       * 换 Key 时**两处一起改**（Kotlin 一处、这里一处）。
+       * ─────────────────────────────────────────────────────────────── */
+      var publicConfig = {
+        endpoint: "https://morecheck.app.workbuddy.host",
+        oauthRelayBaseUrl: "https://www.workbuddy.cn/v2/as/genie-baas/oauth",
+        publishableKey: "wbpk_pQB4MT3Hax2MFbWqH3Xj3t_t00dgUklIh0YkkkzDq1LaCh7jib8AhAn"
+      };
+
+      var cloud = null;
+      var tab = 'phone';
+      var todos = [];
+      var loadingTodos = false;   // true = 正在读列表（首屏铺骨架用，2026-10-30 需求 1）
+      var imagesByTodo = {};      // todoId -> [imageRow]
+      var signedUrlCache = {};    // path -> {url, at}
+      /* 列表指纹：内容没变就不重建 DOM（见 render / listSignature）。 */
+      var lastListSig = null;
+      var profile = { nickname: '', signature: '', avatar_path: '' };
+      var currentUser = null;
+      var filter = 'all';
+      var pendingOtp = null;
+      var sending = false;
+      var countdownTimer = null;
+      var viewerImageId = null;
+      var sessionRestored = false;
+
+      var SESSION_PREFIX = 'workbuddy-cloud.session.';
+      var LAST_ACCOUNT_KEY = 'todo.lastAccount';
+
+      function $(id) { return document.getElementById(id); }
+
+      /* ================================================================
+       * 原生桥（MoreCheck 注入 window.__CIM_TODO__）
+       *
+       * 约定：任何方法都不存在时全部走 no-op 回退，因此同一份页面
+       * 在浏览器里、在 WebView 里都能跑，不依赖宿主。
+       * ================================================================ */
+      var Native = {
+        // 桥在不在：原生侧用 `@JavascriptInterface fun version()` 暴露同名方法
+        // （Kotlin 属性会被挂成 getVersion()，拿 `.version` 会读到 undefined——
+        //  真机上就踩过这个：桥明明在，页面却全程走 no-op 回退）。
+        // 两种写法都认，任一侧将来改用另一种形态都不会再静默失效。
+        available: function () {
+          var b = window.__CIM_TODO__;
+          return !!(b && (b.version || b.getVersion));
+        },
+        pickImage: function () {
+          var self = this;
+          return new Promise(function (resolve) {
+            if (!self.available() || typeof window.__CIM_TODO__.pickImage !== 'function') {
+              resolve(null);
+              return;
+            }
+            var cbId = 'img_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+            window.__cimTodoImage = function (id, dataUrl) {
+              if (id !== cbId) return;
+              try { delete window.__cimTodoImage; } catch (e) { window.__cimTodoImage = null; }
+              // 约定：空串 = 用户取消或宿主解码失败（不再退回 input 选择器）；
+              // null = 压根没有原生桥（此时才退回 <input type=file>）。
+              resolve(typeof dataUrl === 'string' ? dataUrl : null);
+            };
+            try {
+              window.__CIM_TODO__.pickImage(cbId);
+            } catch (e) {
+              resolve(null);
+            }
+          });
+        },
+        getUserInfo: function () {
+          try {
+            if (!this.available() || typeof window.__CIM_TODO__.getUserInfo !== 'function') return null;
+            var raw = window.__CIM_TODO__.getUserInfo();
+            return raw ? JSON.parse(raw) : null;
+          } catch (e) { return null; }
+        },
+        saveSession: function (json) {
+          try {
+            if (this.available() && typeof window.__CIM_TODO__.saveSession === 'function') {
+              window.__CIM_TODO__.saveSession(json);
+            }
+          } catch (e) { /* 原生不可用不影响主流程 */ }
+        },
+        loadSession: function () {
+          try {
+            if (!this.available() || typeof window.__CIM_TODO__.loadSession !== 'function') return null;
+            return window.__CIM_TODO__.loadSession() || null;
+          } catch (e) { return null; }
+        },
+        clearSession: function () {
+          try {
+            if (this.available() && typeof window.__CIM_TODO__.clearSession === 'function') {
+              window.__CIM_TODO__.clearSession();
+            }
+          } catch (e) { /* ignore */ }
+        },
+        /* 退出登录（2026-10-29 账号合并新增）：一个账号，一处退出处处退出。
+           老版本的原生没有这个方法，那时退化成"只退网页"，不会报错。 */
+        signOut: function () {
+          try {
+            if (this.available() && typeof window.__CIM_TODO__.signOut === 'function') {
+              window.__CIM_TODO__.signOut();
+            }
+          } catch (e) { /* ignore */ }
+        },
+        toast: function (msg) {
+          try {
+            if (this.available() && typeof window.__CIM_TODO__.toast === 'function') {
+              window.__CIM_TODO__.toast(String(msg));
+            }
+          } catch (e) { /* ignore */ }
+        },
+        notify: function (payload) {
+          try {
+            if (this.available() && typeof window.__CIM_TODO__.notify === 'function') {
+              window.__CIM_TODO__.notify(JSON.stringify(payload || {}));
+            }
+          } catch (e) { /* ignore */ }
+        },
+        exit: function () {
+          try {
+            if (this.available() && typeof window.__CIM_TODO__.exit === 'function') {
+              window.__CIM_TODO__.exit();
+            }
+          } catch (e) { /* ignore */ }
+        },
+        /* 保存图片（2026-10-30 需求 1）：把灯箱里那张图的 src 交给宿主下载并写相册。
+           浏览器里没有桥时退化成"新窗口打开"，用户仍可右键另存。 */
+        saveImage: function (src) {
+          try {
+            if (this.available() && typeof window.__CIM_TODO__.saveImage === 'function') {
+              window.__CIM_TODO__.saveImage(String(src));
+              return true;
+            }
+          } catch (e) { /* 落到下面的降级 */ }
+          return false;
+        },
+        /* 分享图片（本轮新增）：宿主先下到缓存目录，再走系统分享面板。
+           浏览器里没有桥时返回 false，页面提示"当前环境不支持分享"。 */
+        shareImage: function (src) {
+          try {
+            if (this.available() && typeof window.__CIM_TODO__.shareImage === 'function') {
+              window.__CIM_TODO__.shareImage(String(src));
+              return true;
+            }
+          } catch (e) { /* ignore */ }
+          return false;
+        },
+        /* 灯箱开合（2026-10-30 需求 2）：宿主据此把返回键收过来只关灯箱。 */
+        setViewerOpen: function (open) {
+          try {
+            if (this.available() && typeof window.__CIM_TODO__.setViewerOpen === 'function') {
+              window.__CIM_TODO__.setViewerOpen(!!open);
+            }
+          } catch (e) { /* ignore */ }
+        }
+      };
+
+      function notifyNative(type, extra) {
+        var payload = { type: type, at: Date.now() };
+        if (extra) for (var k in extra) payload[k] = extra[k];
+        Native.notify(payload);
+      }
+
+      /* 内嵌标记（2026-10-31 上线网页版）：有原生桥 = 在 App 的 WebView 里，
+         这时隐藏 OAuth 授权按钮（回调回不来）；纯浏览器访问则保留。
+         脚本在 </body> 前执行，document.body 一定已经存在，不用等 DOMContentLoaded。 */
+      try {
+        if (Native.available()) document.body.classList.add('native-embed');
+      } catch (e) { /* ignore */ }
+
+      /* ================================================================
+       * 工具
+       * ================================================================ */
+      function todayStr() {
+        var d = new Date();
+        var p = function (n) { return String(n).padStart(2, '0'); };
+        return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+      }
+      function prettyDate() {
+        var d = new Date();
+        var wk = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()];
+        return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + wk;
+      }
+      function toast(msg) {
+        var t = $('toast');
+        t.textContent = msg; t.classList.add('show');
+        clearTimeout(t._timer);
+        t._timer = setTimeout(function () { t.classList.remove('show'); }, 2400);
+      }
+      function showLoginMsg(text, kind) {
+        var el = $('loginMsg');
+        el.textContent = text || '';
+        el.className = 'msg' + (kind ? ' ' + kind : '');
+      }
+      function uuid() {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+          var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+      }
+      function maskAccount(v) {
+        if (!v) return '';
+        var s = String(v);
+        if (s.indexOf('@') > 0) {
+          var parts = s.split('@');
+          var name = parts[0];
+          return (name.slice(0, 2) + '***' + '@' + parts[1]);
+        }
+        return s.length > 7 ? (s.slice(0, 3) + '****' + s.slice(-4)) : s;
+      }
+      function dayLabel(ts) {
+        if (!ts) return '';
+        var d = new Date(ts);
+        var now = new Date();
+        var startOf = function (x) { return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
+        var diff = Math.floor((startOf(now) - startOf(d)) / 86400000);
+        if (diff === 0) return '今天';
+        if (diff === 1) return '昨天';
+        if (diff < 7) return diff + ' 天前';
+        return (d.getMonth() + 1) + '月' + d.getDate() + '日';
+      }
+      function timeLabel(ts) {
+        if (!ts) return '';
+        var d = new Date(ts);
+        var p = function (n) { return String(n).padStart(2, '0'); };
+        return p(d.getHours()) + ':' + p(d.getMinutes());
+      }
+
+      /* ================================================================
+       * 会话：读取 / 恢复 / 备份（登录后保留登录状态）
+       *
+       * SDK 把会话写在 localStorage 的 `workbuddy-cloud.session.<publishableKey>`
+       * 下，值是 {accessToken, refreshToken, expiresAt, user}。
+       * 这里不硬编码完整键名，而是**按前缀扫描**，SDK 换 key 后依然能工作。
+       * ================================================================ */
+      function findSessionKey() {
+        try {
+          for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i);
+            if (k && k.indexOf(SESSION_PREFIX) === 0) return k;
+          }
+        } catch (e) { /* ignore */ }
+        return null;
+      }
+      function readLocalSession() {
+        try {
+          var k = findSessionKey();
+          if (!k) return null;
+          var raw = localStorage.getItem(k);
+          return raw ? JSON.parse(raw) : null;
+        } catch (e) { return null; }
+      }
+      function writeLocalSession(obj) {
+        try {
+          var k = findSessionKey() || (SESSION_PREFIX + publicConfig.publishableKey);
+          localStorage.setItem(k, JSON.stringify(obj));
+          return true;
+        } catch (e) { return false; }
+      }
+      function backupSession(session) {
+        if (!session) return;
+        Native.saveSession(JSON.stringify({
+          accessToken: session.accessToken,
+          refreshToken: session.refreshToken,
+          expiresAt: session.expiresAt,
+          user: session.user
+        }));
+      }
+      /* 登录态的**唯一事实来源**（2026-10-29 账号合并后）：
+       *
+       *   有原生桥 → 原生说了算；没有桥（浏览器调试）→ localStorage 说了算。
+       *
+       * 两个方向都要处理，少一个就会出"退不干净 / 换号不生效"：
+       * - 原生**有**会话 → 写进 localStorage（清缓存 / 重装后照样免登录）；
+       * - 原生**没有**会话 → 把 localStorage 里可能残留的旧会话清掉。不清的话，
+       *   用户在 App 里退出登录后进待办，页面会拿着残留会话当成已登录
+       *   （旧版本里"退出后进来还是我"就是这么来的）。
+       */
+      function restoreSession() {
+        if (sessionRestored) return;
+        sessionRestored = true;
+        if (!Native.available()) return;
+        var saved = Native.loadSession();
+        if (saved) {
+          try {
+            var obj = JSON.parse(saved);
+            if (obj && obj.accessToken) writeLocalSession(obj);
+          } catch (e) { /* 解析失败：当作没有，走登录页 */ }
+        } else if (readLocalSession()) {
+          clearLocalSession();
+        }
+      }
+
+      /* 清掉本地会话（只清 localStorage，不动原生——原生那份由 Native.signOut 负责）。 */
+      function clearLocalSession() {
+        try {
+          var k = findSessionKey();
+          if (k) localStorage.removeItem(k);
+        } catch (e) { /* ignore */ }
+      }
+
+      /* ================================================================
+       * 一键登录（沿用打卡账号）—— 2026-10-29 需求
+       *
+       * 打卡与待办现在是同一个账号（同一个云应用、同一个 `auth.uid()`），所以
+       * **只要 App 已经登录**，这里就不该再让用户输一遍手机号。
+       *
+       * 两条路：
+       * 1. **自动**：页面启动时原生有会话、而 SDK 没自己读到（SDK 初始化早于我们把
+       *    会话写进 localStorage 时就会这样），就静默补一次；
+       * 2. **手动**：登录页的「一键登录」按钮（自动那次没成、或用户主动退出后重进时露出）。
+       *
+       * ⚠️ 不能把会话塞给 SDK 就完事：写 localStorage 之后必须再问一次 `getSession()`，
+       * 让它自己把会话读进内存——否则 `enterApp()` 之后所有请求仍然是"无会话"，
+       * 表现为列表一直空、加待办报权限错误。
+       */
+      var oneTapTrying = false;
+      function nativeOneTapLogin(silent) {
+        if (!Native.available() || oneTapTrying) return Promise.resolve(false);
+        var saved = Native.loadSession();
+        if (!saved) return Promise.resolve(false);
+        var obj = null;
+        try { obj = JSON.parse(saved); } catch (e) { return Promise.resolve(false); }
+        if (!obj || !obj.accessToken) return Promise.resolve(false);
+        oneTapTrying = true;
+        writeLocalSession(obj);
+        return Promise.resolve(cloud.auth.getSession()).then(function (res) {
+          oneTapTrying = false;
+          var session = res && res.data;
+          if (!session || !session.user) {
+            if (!silent) showLoginMsg('打卡账号的登录态用不了，请用验证码登录', 'err');
+            return false;
+          }
+          enterApp(session.user);
+          return true;
+        }).catch(function () {
+          oneTapTrying = false;
+          if (!silent) showLoginMsg('一键登录失败，请用验证码登录', 'err');
+          return false;
+        });
+      }
+
+      /* 登录页是否露出「一键登录」：**只有原生真的有会话才露**，
+         否则一个点了必然失败的按钮比没有更糟。
+         标签上写出是哪个账号（脱敏），用户能认出"这就是我打卡用的号"。 */
+      function refreshNativeLoginButton() {
+        var btn = $('nativeLogin');
+        if (!btn) return;
+        var saved = Native.loadSession();
+        if (!saved) { btn.classList.add('hidden'); return; }
+        var tag = $('nativeLoginTag');
+        if (tag) {
+          var who = '';
+          try {
+            var u = JSON.parse(saved).user || {};
+            var acc = u.phone || u.email || (u.raw && (u.raw.phone_number || u.raw.email)) || '';
+            if (acc) who = ' · ' + maskAccount(acc);
+          } catch (e) { /* 解析失败就只显示默认文案 */ }
+          tag.textContent = '沿用打卡账号' + who;
+        }
+        btn.classList.remove('hidden');
+      }
+
+      /* ================================================================
+       * 页面内二次确认
+       *
+       * 刻意不用 `window.confirm`：WebView 的系统弹窗是另一个 App 的皮，
+       * 与本页按钮完全两套风格（用户明确要求"UI 风格同今日待办其他按钮"）。
+       * 返回 Promise<boolean>，调用处 `then` 即可。
+       * ================================================================ */
+      var confirmResolve = null;
+      function confirmDialog(opts) {
+        opts = opts || {};
+        $('confirmTitle').textContent = opts.title || '确认';
+        $('confirmText').textContent = opts.text || '';
+        var ok = $('confirmOk');
+        ok.textContent = opts.okText || '确定';
+        ok.className = 'btn' + (opts.danger ? ' danger' : '');
+        $('confirmCancel').textContent = opts.cancelText || '取消';
+        $('confirmMask').classList.add('show');
+        return new Promise(function (resolve) { confirmResolve = resolve; });
+      }
+      function closeConfirm(result) {
+        $('confirmMask').classList.remove('show');
+        var r = confirmResolve; confirmResolve = null;
+        if (r) r(!!result);
+      }
+
+      /* ================================================================
+       * WorkBuddy / 微信 授权登录
+       * ================================================================ */
+      function redirectTarget() {
+        var back = new URL(location.href);
+        back.pathname = '/';
+        ['code', 'state', 'provider'].forEach(function (k) { back.searchParams.delete(k); });
+        return back.toString();
+      }
+
+      function startOAuth(provider, btnId) {
+        var btn = $(btnId);
+        btn.disabled = true;
+        showLoginMsg('正在跳转到授权页…');
+        cloud.auth.signInWithOAuth({ provider: provider, redirectTo: redirectTarget() })
+          .then(function (res) {
+            if (res.error) {
+              showLoginMsg(res.error.message || '登录启动失败，请重试', 'err');
+              btn.disabled = false;
+              return;
+            }
+            location.assign(res.data.url);
+          })
+          .catch(function (e) {
+            showLoginMsg((e && e.message) || '登录启动失败，请重试', 'err');
+            btn.disabled = false;
+          });
+      }
+
+      function signInWithWorkBuddy() { startOAuth('workbuddy', 'wbBtn'); }
+      function signInWithWechat() { startOAuth('wechat', 'wxBtn'); }
+
+      function restoreAuth() {
+        var url = new URL(location.href);
+        if (!url.searchParams.has('code') && !url.searchParams.has('error')) return Promise.resolve(false);
+        var provider = url.searchParams.get('provider');
+        if (provider !== 'workbuddy' && provider !== 'wechat') {
+          showLoginMsg('授权回调缺少有效的登录方式，请重新登录。', 'err');
+          return Promise.resolve(true);
+        }
+        var handleCallback = provider === 'workbuddy'
+          ? cloud.auth.handleWorkBuddyCallback
+          : cloud.auth.handleWechatWebCallback;
+        if (typeof handleCallback !== 'function') {
+          showLoginMsg('当前 SDK 版本暂不支持此登录方式，请联系应用管理员。', 'err');
+          return Promise.resolve(true);
+        }
+        return Promise.resolve(handleCallback.call(cloud.auth)).then(function (res) {
+          if (res.error) { showLoginMsg(res.error.message || '授权失败，请重试。', 'err'); return true; }
+          if (res.data) {
+            ['code', 'state', 'provider'].forEach(function (k) { url.searchParams.delete(k); });
+            history.replaceState(null, '', url.pathname + url.search + url.hash);
+            enterApp(res.data.user);
+            return true;
+          }
+          return false;
+        }).catch(function (e) {
+          showLoginMsg((e && e.message) || '授权失败，请重试。', 'err');
+          return true;
+        });
+      }
+
+      /* ================================================================
+       * 验证码登录
+       * ================================================================ */
+      function switchTab(t) {
+        tab = t;
+        $('tabPhone').classList.toggle('active', t === 'phone');
+        $('tabEmail').classList.toggle('active', t === 'email');
+        var acc = $('accountInput');
+        var label = $('accountLabel');
+        if (t === 'phone') {
+          label.textContent = '手机号';
+          acc.type = 'text'; acc.inputMode = 'numeric'; acc.placeholder = '请输入 11 位手机号';
+        } else {
+          label.textContent = '邮箱';
+          acc.type = 'email'; acc.inputMode = 'email'; acc.placeholder = '请输入邮箱地址';
+        }
+        acc.value = ''; pendingOtp = null; showLoginMsg('');
+        renderLastAccount();
+      }
+
+      function renderLastAccount() {
+        var bar = $('lastAccountBar');
+        var last = null;
+        try { last = JSON.parse(localStorage.getItem(LAST_ACCOUNT_KEY) || 'null'); } catch (e) { last = null; }
+        if (!last || !last.value) { bar.classList.remove('show'); return; }
+        if (last.type !== tab) { bar.classList.remove('show'); return; }
+        $('lastAccountText').textContent = '上次登录：' + maskAccount(last.value);
+        bar.classList.add('show');
+      }
+
+      function rememberAccount(value, type) {
+        try { localStorage.setItem(LAST_ACCOUNT_KEY, JSON.stringify({ value: value, type: type, at: Date.now() })); }
+        catch (e) { /* ignore */ }
+      }
+
+      function sendCode() {
+        if (sending) return;
+        var acc = $('accountInput').value.trim();
+        if (tab === 'phone') {
+          if (!/^1\d{10}$/.test(acc)) { showLoginMsg('请输入正确的 11 位手机号', 'err'); return; }
+        } else {
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(acc)) { showLoginMsg('请输入正确的邮箱地址', 'err'); return; }
+        }
+        sending = true;
+        var btn = $('codeBtn');
+        btn.disabled = true;
+        showLoginMsg('正在发送验证码…');
+        var payload = tab === 'phone' ? { phone: acc } : { email: acc };
+        cloud.auth.sendOtp(payload).then(function (sent) {
+          if (sent.error) {
+            showLoginMsg(sent.error.message || '发送失败，请重试', 'err');
+            btn.disabled = false; sending = false;
+            return;
+          }
+          pendingOtp = {
+            phone: tab === 'phone' ? acc : undefined,
+            email: tab === 'email' ? acc : undefined,
+            verificationId: sent.data.verificationId,
+            isExistingUser: sent.data.isExistingUser
+          };
+          showLoginMsg('验证码已发送，请查收', 'info');
+          startCountdown(); sending = false;
+        }).catch(function (e) {
+          showLoginMsg((e && e.message) || '发送失败，请重试', 'err');
+          btn.disabled = false; sending = false;
+        });
+      }
+
+      function startCountdown() {
+        var btn = $('codeBtn');
+        var left = 60;
+        btn.disabled = true; btn.textContent = left + 's';
+        clearInterval(countdownTimer);
+        countdownTimer = setInterval(function () {
+          left -= 1;
+          if (left <= 0) { clearInterval(countdownTimer); btn.textContent = '获取验证码'; btn.disabled = false; }
+          else btn.textContent = left + 's';
+        }, 1000);
+      }
+
+      function submitLogin() {
+        if (!pendingOtp) { showLoginMsg('请先获取验证码', 'err'); return; }
+        var code = $('codeInput').value.trim();
+        if (!code) { showLoginMsg('请输入验证码', 'err'); return; }
+        var params = {
+          verificationId: pendingOtp.verificationId,
+          isExistingUser: pendingOtp.isExistingUser,
+          token: code
+        };
+        if (pendingOtp.phone) params.phone = pendingOtp.phone;
+        else params.email = pendingOtp.email;
+        var btn = $('loginBtn');
+        btn.disabled = true;
+        cloud.auth.verifyOtp(params).then(function (done) {
+          btn.disabled = false;
+          if (done.error) { showLoginMsg(done.error.message || '登录失败，请重试', 'err'); return; }
+          pendingOtp = null; showLoginMsg('');
+          rememberAccount(pendingAccountValue(), tab);
+          return cloud.auth.getSession().then(function (s) {
+            if (s && s.data) {
+              backupSession(s.data);
+              enterApp(s.data.user);
+            }
+          });
+        }).catch(function (e) {
+          btn.disabled = false;
+          showLoginMsg((e && e.message) || '登录失败，请重试', 'err');
+        });
+      }
+
+      /* 密码登录：调本页 SDK 的 /v1/signin，登录的是本页自己的云身份，
+         与顶部「一键登录」的 App 账号不是同一套；成功后必须按本页既有
+         链路 getSession → backupSession → enterApp，否则原生侧仍是未登录。
+         两套表单用面板切换，顶部一键登录 / OAuth 不受影响。 */
+      function showPwdLoginMsg(text, kind) {
+        var el = $('pwdLoginMsg');
+        el.textContent = text || '';
+        el.className = 'msg' + (kind ? ' ' + kind : '');
+      }
+      function showPasswordLogin() {
+        $('otpLoginBox').classList.add('hidden');
+        $('pwdLoginBox').classList.remove('hidden');
+        showLoginMsg('');
+        showPwdLoginMsg('');
+      }
+      function showOtpLogin() {
+        $('pwdLoginBox').classList.add('hidden');
+        $('otpLoginBox').classList.remove('hidden');
+        showPwdLoginMsg('');
+        showLoginMsg('');
+      }
+      function submitPasswordLogin() {
+        var btn = $('pwdLoginBtn');
+        if (btn.disabled) return;
+        var phone = $('pwdPhoneInput').value.trim();
+        var password = $('pwdInput').value;
+        if (!/^1\d{10}$/.test(phone)) { showPwdLoginMsg('请输入正确的 11 位手机号', 'err'); return; }
+        if (!password) { showPwdLoginMsg('请输入密码', 'err'); return; }
+        btn.disabled = true;
+        showPwdLoginMsg('正在登录…');
+        /* resolveAuthIdentifier 要求 email / phone 恰好其一，normalizePhone 会
+           自行补 +86 前缀，所以这里传用户输入的裸手机号，别自己拼区号。 */
+        cloud.auth.signInWithPassword({ phone: phone, password: password }).then(function (done) {
+          btn.disabled = false;
+          if (done.error) { showPwdLoginMsg(done.error.message || '登录失败，请重试', 'err'); return; }
+          showPwdLoginMsg('');
+          return cloud.auth.getSession().then(function (s) {
+            if (s && s.data) {
+              backupSession(s.data);
+              enterApp(s.data.user);
+            }
+          });
+        }).catch(function (e) {
+          btn.disabled = false;
+          showPwdLoginMsg((e && e.message) || '登录失败，请重试', 'err');
+        });
+      }
+
+      function pendingAccountValue() {
+        if (!pendingOtp) return $('accountInput').value.trim();
+        return pendingOtp.phone || pendingOtp.email || '';
+      }
+
+      /* ================================================================
+       * 待办：全部保留（不再按天过滤）
+       * ================================================================ */
+      function enterApp(user) {
+        currentUser = user || null;
+        /* 登录成功 → 把会话交给原生（2026-10-29）：三种登录路径
+           （验证码 / WorkBuddy 授权 / 微信授权）都从这里过，所以挂在这里最稳。
+           原生采纳后，打卡页与其它内嵌页立刻是同一个账号。 */
+        try {
+          Promise.resolve(cloud.auth.getSession()).then(function (s) {
+            if (s && s.data) backupSession(s.data);
+          }).catch(function () {});
+        } catch (e) { /* ignore */ }
+        $('loginView').classList.add('hidden');
+        $('appView').classList.remove('hidden');
+        $('dateLabel').textContent = prettyDate() + ' · 待办全部保留';
+        renderAvatar();
+        loadProfile();
+        loadTodos();
+      }
+
+      function exitApp(reason) {
+        $('appView').classList.add('hidden');
+        $('loginView').classList.remove('hidden');
+        todos = [];
+        imagesByTodo = {};
+        $('list').innerHTML = '';
+        $('codeInput').value = ''; $('accountInput').value = '';
+        renderLastAccount();
+        refreshNativeLoginButton();
+        if (reason) showLoginMsg(reason, 'err');
+      }
+
+      function loadTodos() {
+        // ⚠️ 不再按 todo_date 过滤：待办一旦创建就长期保留，跨天不清空。
+        loadingTodos = true;
+        if (!todos.length) render();      // 只有首次进页面才铺骨架，刷新时别把列表整块抽掉
+        cloud.database.from('todos').select('*').order('created_at', { ascending: false })
+          .then(function (res) {
+            loadingTodos = false;
+            if (res.error) { render(); toast(res.error.message || '加载失败'); return; }
+            todos = res.data || [];
+            render();
+            loadImages();
+          }).catch(function () { loadingTodos = false; render(); toast('加载失败，请检查网络'); });
+      }
+
+      /* 空内容点「添加」：抖一下输入框 + 边框变红 + 一句提示（2026-10-30 需求 2）。
+       *
+       * 只 toast 不够——输入框在页面上方、toast 在屏幕底部，用户的视线还在按钮上，
+       * 看不到哪里出了问题。所以把提示直接做在**出问题的那个控件**上。 */
+      function warnEmptyInput() {
+        var input = $('newTodo');
+        input.classList.remove('warn');
+        void input.offsetWidth;           // 强制重排，让动画能被重复触发
+        input.classList.add('warn');
+        setTimeout(function () { input.classList.remove('warn'); }, 1200);
+        input.focus();
+        toast('请先填写待办内容');
+      }
+
+      var adding = false;
+
+      function addTodo() {
+        var input = $('newTodo');
+        var btn = $('addBtn');
+        var content = input.value.trim();
+        if (!content) { warnEmptyInput(); return; }
+        if (adding) return;
+        adding = true;
+        btn.classList.add('busy');        // 文字隐藏、原位转圈，按钮宽度不变（不会把输入框挤小）
+        btn.disabled = true;
+        cloud.database.from('todos').insert({ content: content, todo_date: todayStr(), completed: false }).select()
+          .then(function (res) {
+            if (res.error) { toast(res.error.message || '添加失败'); return; }
+            input.value = '';
+            if (res.data && res.data[0]) todos.unshift(res.data[0]);
+            render();
+            notifyNative('todo_added', { id: res.data && res.data[0] ? res.data[0].id : null });
+          }).catch(function () { toast('添加失败，请重试'); })
+          .then(function () {
+            adding = false;
+            btn.classList.remove('busy');
+            btn.disabled = false;
+          });
+      }
+
+      function toggleTodo(id) {
+        var item = todos.find(function (t) { return t.id === id; });
+        if (!item) return;
+        cloud.database.from('todos').update({ completed: !item.completed }).eq('id', id).select()
+          .then(function (res) {
+            if (res.error) { toast(res.error.message || '操作失败'); return; }
+            if (res.data && res.data.length) item.completed = res.data[0].completed;
+            else toast('操作未生效，请刷新重试');
+            render();
+            notifyNative('todo_updated', { id: id, completed: item.completed });
+          }).catch(function () { toast('操作失败，请重试'); });
+      }
+
+      /* ── 删除：先本地移除 + 出「撤销」条，5 秒后才真正删云端那条 ──────────
+       *
+       * 为什么是"延后删除"而不是"先删再插回"：`todo_images` 是挂在 todos.id 上的，
+       * 先删再插会拿到一个新 id，图片备注就跟丢了。延后删除则连 id 一起留着，
+       * 撤销时什么都不用重建。
+       *
+       * 期间再删一条：上一条立刻落地（撤销窗口只有一个，避免"撤销撤的是哪条"歧义）。
+       */
+      var pendingDelete = null;
+
+      /* 删备注图也走同一条撤销条（2026-10-30 需求 3）。
+       *
+       * 与删待办同构：先从界面拿掉，5 秒后才真删 `todo_images` 那行；
+       * 撤销就是把行放回 `imagesByTodo` 再重绘——本地状态即是"真相"，
+       * 云端的删除没发生，也就没有"插回去拿新 id"的问题。
+       *
+       * 两条撤销共用一条 UI（屏幕上永远只有一条），所以新动作先 flush 旧的。 */
+      var pendingImageDelete = null;
+
+      function showUndo(text) {
+        $('undoText').textContent = text;
+        $('undoBar').classList.add('show');
+        $('toast').classList.add('above');
+      }
+      function hideUndo() {
+        $('undoBar').classList.remove('show');
+        $('toast').classList.remove('above');
+      }
+
+      /** 真正把云端那行删掉；失败则把条目放回列表，别让用户以为删成功了。 */
+      function commitDelete(p) {
+        cloud.database.from('todos').delete().eq('id', p.id).then(function (res) {
+          if (res && res.error) {
+            todos.splice(Math.min(p.index, todos.length), 0, p.item);
+            if (p.images) imagesByTodo[p.id] = p.images;
+            render();
+            toast(res.error.message || '删除失败，已恢复');
+            return;
+          }
+          delete imagesByTodo[p.id];
+          notifyNative('todo_deleted', { id: p.id });
+        }).catch(function () {
+          todos.splice(Math.min(p.index, todos.length), 0, p.item);
+          if (p.images) imagesByTodo[p.id] = p.images;
+          render();
+          toast('删除失败，已恢复');
+        });
+      }
+
+      /** 把一张备注图放回本地状态（撤销 / 云端删除失败时共用）。 */
+      function restoreImage(p) {
+        var key = String(p.todoId);
+        (imagesByTodo[key] = imagesByTodo[key] || []).push(p.row);
+        render();
+      }
+
+      function commitImageDelete(p) {
+        cloud.database.from('todo_images').delete().eq('id', p.id).select().then(function (res) {
+          if (res && res.error) {
+            restoreImage(p);
+            toast(res.error.message || '删除失败，已恢复');
+            return;
+          }
+          notifyNative('image_deleted', { id: p.id });
+        }).catch(function () {
+          restoreImage(p);
+          toast('删除失败，已恢复');
+        });
+      }
+
+      /** 把当前挂着的删除（待办 / 备注图）立刻落地。 */
+      function flushPendingDelete() {
+        if (pendingDelete) {
+          var p = pendingDelete;
+          pendingDelete = null;
+          clearTimeout(p.timer);
+          hideUndo();
+          commitDelete(p);
+        }
+        if (pendingImageDelete) {
+          var q = pendingImageDelete;
+          pendingImageDelete = null;
+          clearTimeout(q.timer);
+          hideUndo();
+          commitImageDelete(q);
+        }
+      }
+
+      function deleteTodo(id) {
+        flushPendingDelete();
+        var idx = -1;
+        for (var i = 0; i < todos.length; i++) {
+          if (todos[i].id === id) { idx = i; break; }
+        }
+        if (idx < 0) return;
+        var item = todos[idx];
+        var images = imagesByTodo[id];
+        todos.splice(idx, 1);
+        delete imagesByTodo[id];
+        render();
+
+        var text = String(item.content || '这条待办');
+        if (text.length > 12) text = text.slice(0, 12) + '…';
+        var p = { id: id, item: item, index: idx, images: images, timer: null };
+        pendingDelete = p;
+        p.timer = setTimeout(function () {
+          if (pendingDelete !== p) return;
+          pendingDelete = null;
+          hideUndo();
+          commitDelete(p);
+        }, 5000);
+        showUndo('已删除「' + text + '」');
+      }
+
+      function undoDelete() {
+        if (pendingImageDelete) {
+          var q = pendingImageDelete;
+          pendingImageDelete = null;
+          clearTimeout(q.timer);
+          hideUndo();
+          restoreImage(q);
+          toast('已撤销删除');
+          return;
+        }
+        var p = pendingDelete;
+        if (!p) return;
+        pendingDelete = null;
+        clearTimeout(p.timer);
+        hideUndo();
+        todos.splice(Math.min(p.index, todos.length), 0, p.item);
+        if (p.images) imagesByTodo[p.id] = p.images;
+        render();
+        toast('已撤销删除');
+      }
+
+      function visibleTodos() {
+        if (filter === 'active') return todos.filter(function (t) { return !t.completed; });
+        if (filter === 'done') return todos.filter(function (t) { return t.completed; });
+        return todos;
+      }
+
+      function render() {
+        var list = $('list');
+        // 首次加载：先画三条骨架，别让"空白 → 突然一屏内容"这种突变出现。
+        if (loadingTodos && todos.length === 0) {
+          list.innerHTML = '';
+          lastListSig = null;
+          for (var s = 0; s < 3; s++) list.appendChild(buildSkeleton(s));
+          updateCounters();
+          return;
+        }
+        var shown = visibleTodos();
+        var sig = listSignature(shown);
+        // 列表内容没变就不重建 DOM（2026-10-31 卡顿修复）。
+        //
+        // 原来每次 render 都 `innerHTML=''` 再逐条重建：签名单返回、头像刷新、
+        // 撤销条收起……任何一处小状态变化都会把整列表连同 N 个 <img> 全部重建，
+        // 每张图都要重新解码一次，滑动时一顿一顿的。现在内容没变只更新计数。
+        if (sig !== lastListSig) {
+          lastListSig = sig;
+          list.innerHTML = '';
+          if (shown.length === 0) {
+            var empty = document.createElement('div');
+            empty.className = 'empty';
+            empty.innerHTML = '<div class="big">🗒️</div>' +
+              (todos.length === 0 ? '还没有待办，添加一项吧' : '这个筛选下没有待办');
+            list.appendChild(empty);
+          } else {
+            var lastLabel = null;
+            shown.forEach(function (t) {
+              var label = dayLabel(t.created_at);
+              if (label !== lastLabel) {
+                lastLabel = label;
+                var h = document.createElement('li');
+                h.className = 'group-title';
+                h.textContent = label;
+                list.appendChild(h);
+              }
+              list.appendChild(buildItem(t));
+            });
+          }
+        }
+        updateCounters();
+      }
+
+      /** 列表"看起来会变"的全部因素的指纹；一样就说明这一帧不用重画。 */
+      function listSignature(shown) {
+        var parts = [];
+        for (var i = 0; i < shown.length; i++) {
+          var t = shown[i];
+          var imgs = imagesByTodo[t.id] || [];
+          var ids = [];
+          for (var j = 0; j < imgs.length; j++) ids.push(imgs[j].id != null ? imgs[j].id : imgs[j].path);
+          parts.push(t.id + '|' + (t.completed ? 1 : 0) + '|' + (t.content || '') +
+            '|' + (t.created_at || '') + '|' + ids.join(','));
+        }
+        return filter + '#' + parts.join(';');
+      }
+
+      function updateCounters() {
+        var remaining = todos.filter(function (t) { return !t.completed; }).length;
+        $('remainN').textContent = remaining;
+        $('doneN').textContent = todos.length - remaining;
+        $('totalN').textContent = todos.length;
+        $('dateLabel').textContent = prettyDate() + ' · 共 ' + todos.length + ' 条，全部保留';
+        updateProfileStats();
+      }
+
+      /** 一条骨架（宽度按 index 错开一点，看起来像真的在排内容）。 */
+      function buildSkeleton(i) {
+        var li = document.createElement('li');
+        li.className = 'skel-item';
+        var dot = document.createElement('div');
+        dot.className = 'skel-dot';
+        var lines = document.createElement('div');
+        lines.className = 'skel-lines';
+        var w = [76, 58, 66][i % 3];
+        var l1 = document.createElement('div');
+        l1.className = 'skel-line';
+        l1.style.width = w + '%';
+        var l2 = document.createElement('div');
+        l2.className = 'skel-line';
+        l2.style.width = '34%';
+        lines.appendChild(l1);
+        lines.appendChild(l2);
+        li.appendChild(dot);
+        li.appendChild(lines);
+        return li;
+      }
+
+      function buildItem(t) {
+        var li = document.createElement('li');
+        li.className = 'item' + (t.completed ? ' done' : '');
+
+        var check = document.createElement('div');
+        check.className = 'check' + (t.completed ? ' done' : '');
+        if (t.completed) {
+          check.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-11"/></svg>';
+        }
+        check.addEventListener('click', function () { toggleTodo(t.id); });
+
+        var body = document.createElement('div');
+        body.className = 'body';
+        var text = document.createElement('div');
+        text.className = 'text';
+        text.textContent = t.content;
+        body.appendChild(text);
+
+        var imgs = imagesByTodo[t.id] || [];
+        if (imgs.length) {
+          var meta = document.createElement('div');
+          meta.className = 'meta';
+          meta.textContent = '添加于 ' + timeLabel(t.created_at) + ' · ' + imgs.length + ' 张备注图';
+          body.appendChild(meta);
+          var thumbs = document.createElement('div');
+          thumbs.className = 'thumbs';
+          imgs.forEach(function (img) {
+            // 先放灰块占位，拿到签名 URL 后再把 <img> 挂进去（2026-10-30 需求 1：
+            // 直接塞空 src 的 img 会先出现破图框，再突然跳成图片）。
+            // 2026-10-31：进页面时已批量签好名（prefetchSignedUrls），命中的直接
+            // 同步挂图——重建列表时不再出现"灰块闪一下"。
+            var box = document.createElement('div');
+            box.className = 'thumb';
+            // 记住这张图对应的存储路径：批量签名回来后按它就地补图（见 refreshThumbs），
+            // 不用为了刷新缩略图再重建整个列表。
+            box.setAttribute('data-path', img.path || '');
+            bindThumbGestures(box, img);
+            thumbs.appendChild(box);
+            var cached = signedUrlCache[img.path];
+            if (cached && (Date.now() - cached.at) < 30 * 60 * 1000) {
+              fillThumb(box, cached.url);
+            } else {
+              resolveImageUrl(img.path).then(function (r) { if (r) fillThumb(box, r); });
+            }
+          });
+          body.appendChild(thumbs);
+        } else {
+          var meta2 = document.createElement('div');
+          meta2.className = 'meta';
+          meta2.textContent = '添加于 ' + timeLabel(t.created_at);
+          body.appendChild(meta2);
+        }
+
+        var side = document.createElement('div');
+        side.className = 'side-btns';
+
+        var imgBtn = document.createElement('button');
+        imgBtn.className = 'icon-btn';
+        imgBtn.type = 'button';
+        imgBtn.title = '添加图片备注';
+        imgBtn.setAttribute('aria-label', '添加图片备注');
+        imgBtn.textContent = '🖼';
+        imgBtn.addEventListener('click', function () { addImageNote(t.id); });
+        side.appendChild(imgBtn);
+
+        var del = document.createElement('button');
+        del.className = 'icon-btn danger';
+        del.type = 'button';
+        del.title = '删除';
+        del.setAttribute('aria-label', '删除');
+        del.textContent = '×';
+        del.addEventListener('click', function () { deleteTodo(t.id); });
+        side.appendChild(del);
+
+        li.appendChild(check);
+        li.appendChild(body);
+        li.appendChild(side);
+        return li;
+      }
+
+      /** 批量签名回来后，把列表里还没出图的缩略图就地补上（不重建 DOM）。 */
+      function refreshThumbs() {
+        var boxes = document.querySelectorAll('#list .thumb[data-path]');
+        for (var i = 0; i < boxes.length; i++) {
+          var box = boxes[i];
+          if (box.firstChild) continue;                 // 已经出图了
+          var p = box.getAttribute('data-path');
+          var c = p ? signedUrlCache[p] : null;
+          if (c && (Date.now() - c.at) < 30 * 60 * 1000) fillThumb(box, c.url);
+        }
+      }
+
+      /** 把签名 URL 填进缩略图灰块（已有 <img> 就只换 src，避免重复解码）。 */
+      function fillThumb(box, url) {        if (!box || !url) return;
+        var el = box.firstChild;
+        if (el) {
+          if (el.getAttribute('src') !== url) el.src = url;
+        } else {
+          el = document.createElement('img');
+          el.alt = '备注图';
+          // 解码让浏览器异步做，别在主线程抢渲染（列表滚动更顺）。
+          el.decoding = 'async';
+          el.loading = 'lazy';
+          el.src = url;
+          box.appendChild(el);
+        }
+        box.classList.add('ready');
+      }
+
+      /* ── 缩略图手势（2026-10-31 需求 4）────────────────────────────────
+       * 点击 = 打开大图；
+       * 长按（未点开时）= 弹「保存 / 分享 / 删除」。
+       *
+       * 长按后手指抬起，浏览器还会补一个 click，所以要 `fired` 标记把它吃掉，
+       * 否则"长按存图"会顺带把灯箱也打开。
+       */
+      function bindThumbGestures(box, img) {
+        var timer = null, sx = 0, sy = 0, fired = false;
+
+        function cancel() {
+          if (timer) { clearTimeout(timer); timer = null; }
+        }
+
+        box.addEventListener('touchstart', function (e) {
+          var t = e.touches && e.touches[0];
+          sx = t ? t.clientX : 0;
+          sy = t ? t.clientY : 0;
+          fired = false;
+          cancel();
+          timer = setTimeout(function () {
+            timer = null;
+            fired = true;
+            openThumbActions(img);
+          }, 550);
+        }, { passive: true });
+
+        box.addEventListener('touchmove', function (e) {
+          var t = e.touches && e.touches[0];
+          if (!t) return;
+          if (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10) cancel();
+        }, { passive: true });
+
+        box.addEventListener('touchend', cancel);
+        box.addEventListener('touchcancel', cancel);
+
+        box.addEventListener('click', function () {
+          if (fired) { fired = false; return; }
+          openViewer(img);
+        });
+
+        // 桌面浏览器 / 部分 WebView 的长按走 contextmenu。
+        box.addEventListener('contextmenu', function (e) {
+          e.preventDefault();
+          openThumbActions(img);
+        });
+      }
+
+      /* ── 图片动作面板（保存 / 分享 / 删除）────────────────────────────
+       * 用页面内的底部面板，不用系统 AlertDialog：灯箱是全屏沉浸的，
+       * 系统弹窗会把它顶成"另一个 App"的样子。
+       */
+      function openImageActions(title, items) {
+        var mask = $('actionMask');
+        var box = $('actionItems');
+        $('actionTitle').textContent = title || '';
+        box.innerHTML = '';
+        (items || []).forEach(function (it) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'action-item' + (it.danger ? ' danger' : '');
+          b.textContent = it.label;
+          b.addEventListener('click', function () {
+            closeImageActions();
+            // 先收面板再执行：删除/保存都可能弹原生 Toast，面板挡着会看不到。
+            setTimeout(function () { if (it.onClick) it.onClick(); }, 30);
+          });
+          box.appendChild(b);
+        });
+        var cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'action-item cancel';
+        cancel.textContent = '取消';
+        cancel.addEventListener('click', closeImageActions);
+        box.appendChild(cancel);
+        mask.classList.add('show');
+      }
+
+      function closeImageActions() {
+        $('actionMask').classList.remove('show');
+      }
+
+      /** 灯箱里那张图的 src（可能是签名 URL，也可能是刚选的 data URL）。 */
+      function viewerSrc() {
+        var el = $('viewerImg');
+        if (!el) return '';
+        return el.currentSrc || el.getAttribute('src') || '';
+      }
+
+      function saveSrc(src) {
+        if (!src) { toast('图片还没加载好'); return; }
+        if (Native.saveImage(src)) return;
+        // 网页版（浏览器里没有原生桥）：用 <a download> 触发下载；
+        // 跨域 URL 的 download 属性会被忽略，那就退化成新窗口打开。
+        try {
+          var a = document.createElement('a');
+          a.href = src;
+          a.download = 'MoreCheck_' + Date.now() + '.jpg';
+          a.rel = 'noopener';
+          a.target = '_blank';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          toast('已开始下载图片');
+        } catch (e) {
+          try { window.open(src, '_blank'); } catch (e2) { /* ignore */ }
+        }
+      }
+
+      function shareSrc(src) {
+        if (!src) { toast('图片还没加载好'); return; }
+        if (Native.shareImage(src)) return;
+        // 网页版：走浏览器的系统分享（navigator.share），不支持就退回打开原图。
+        if (navigator.share) {
+          fetch(src).then(function (r) { return r.blob(); }).then(function (blob) {
+            var name = 'MoreCheck_' + Date.now() + '.' + extOfMime(blob.type);
+            var file = new File([blob], name, { type: blob.type || 'image/jpeg' });
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+              return navigator.share({ files: [file] });
+            }
+            return navigator.share({ url: src });
+          }).catch(function () {
+            try { window.open(src, '_blank'); } catch (e) { /* ignore */ }
+          });
+          return;
+        }
+        try { window.open(src, '_blank'); } catch (e) { /* ignore */ }
+      }
+
+      /** 拿某张备注图的可用 URL（优先缓存），再交给 cb。 */
+      function withImageUrl(path, cb) {
+        var c = signedUrlCache[path];
+        if (c && (Date.now() - c.at) < 30 * 60 * 1000) { cb(c.url); return; }
+        resolveImageUrl(path).then(function (u) {
+          if (u) cb(u);
+          else toast('图片地址拿不到，请稍后重试');
+        });
+      }
+
+      function openThumbActions(img) {
+        openImageActions('图片备注', [
+          { label: '保存到相册', onClick: function () { withImageUrl(img.path, saveSrc); } },
+          { label: '分享', onClick: function () { withImageUrl(img.path, shareSrc); } },
+          { label: '删除图片', danger: true, onClick: function () { deleteImageRow(img.id); } }
+        ]);
+      }
+
+      function openViewerActions() {
+        var src = viewerSrc();
+        if (!src) { toast('图片还没加载好'); return; }
+        openImageActions('图片', [
+          { label: '保存到相册', onClick: function () { saveSrc(src); } },
+          { label: '分享', onClick: function () { shareSrc(src); } }
+        ]);
+      }
+
+      /* ================================================================
+       * 图片备注
+       * ================================================================ */
+      function loadImages() {
+        var ids = todos.map(function (t) { return t.id; });
+        if (!ids.length) { imagesByTodo = {}; render(); return; }
+        var p = ids.length <= 200
+          ? cloud.database.from('todo_images').select('*').in('todo_id', ids)
+          : cloud.database.from('todo_images').select('*');
+        p.then(function (res) {
+          if (res.error) { imagesByTodo = {}; render(); return; }
+          var map = {};
+          (res.data || []).forEach(function (row) {
+            var k = String(row.todo_id);
+            (map[k] = map[k] || []).push(row);
+          });
+          imagesByTodo = map;
+          // 先把这批图**一次性**签名（见 prefetchSignedUrls）：逐张签名会在进页面时
+          // 同时发出 N 个请求，行一多就是肉眼可见的卡顿。
+          prefetchSignedUrls(allImagePaths());
+          render();
+        }).catch(function () { imagesByTodo = {}; render(); });
+      }
+
+      /** 当前所有备注图的存储路径（去重）。 */
+      function allImagePaths() {
+        var out = [], seen = {};
+        Object.keys(imagesByTodo).forEach(function (k) {
+          (imagesByTodo[k] || []).forEach(function (row) {
+            if (row && row.path && !seen[row.path]) { seen[row.path] = 1; out.push(row.path); }
+          });
+        });
+        return out;
+      }
+
+      /**
+       * 批量签名 + 预热缓存。
+       *
+       * 走 SDK 的 `createSignedUrls(paths, expiresIn)`（一次 POST 签完全部），
+       * 而不是对每张图各调一次 `createSignedUrl`。两者效果一样，但后者是 N 个
+       * 请求：列表里 10 张图 = 10 次往返，页面刚进来那一下全卡在这里。
+       */
+      var signingNow = null;
+      function prefetchSignedUrls(paths) {
+        var need = (paths || []).filter(function (p) {
+          if (!p) return false;
+          var c = signedUrlCache[p];
+          return !(c && (Date.now() - c.at) < 30 * 60 * 1000);
+        });
+        if (!need.length) return Promise.resolve();
+        try {
+          if (cloud.storage && typeof cloud.storage.createSignedUrls === 'function') {
+            signingNow = Promise.resolve(cloud.storage.createSignedUrls(need, 3600))
+              .then(function (res) {
+                if (!res || res.error) return null;
+                var rows = res.data || [];
+                rows.forEach(function (row, i) {
+                  if (!row) return;
+                  var url = row.signedUrl || row.signedURL || row.url || null;
+                  var p = row.path || need[i];
+                  if (url && p) signedUrlCache[p] = { url: url, at: Date.now() };
+                });
+                return true;
+              })
+              .catch(function () { return null; })
+              .then(function (ok) {
+                signingNow = null;
+                // 签完就地补图，不重建列表：重建会把 N 个 <img> 全部重新解码一次，
+                // 正是"进页面一顿"的来源之一。
+                if (ok) refreshThumbs();
+              });
+            return signingNow;
+          }
+        } catch (e) { /* 落到逐张签名 */ }
+        return Promise.all(need.map(resolveImageUrl)).catch(function () {});
+      }
+
+      /**
+       * `data:image/xxx;base64,…` → `{ blob, mime }`（不解码、不重编码）。
+       *
+       * 2026-10-31「图片不是原图」的修复核心：原生侧现在给的就是**原始字节**
+       * （未超限时直接传原文件），这里如果再过一遍 canvas 就白改了——canvas
+       * 重编码是有损的（JPEG 0.82 + 尺寸回缩），放大看立刻糊。
+       */
+      function dataUrlToBlob(dataUrl) {
+        var comma = dataUrl.indexOf(',');
+        var meta = comma > 0 ? dataUrl.slice(5, comma) : '';
+        var mime = (meta.split(';')[0] || 'image/jpeg');
+        var bin = atob(dataUrl.slice(comma + 1));
+        var len = bin.length;
+        var bytes = new Uint8Array(len);
+        for (var i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+        return { blob: new Blob([bytes], { type: mime }), mime: mime };
+      }
+
+      /** mime → 扩展名（存储路径用）。 */
+      function extOfMime(mime) {
+        var m = String(mime || '').toLowerCase();
+        if (m.indexOf('png') >= 0) return 'png';
+        if (m.indexOf('webp') >= 0) return 'webp';
+        if (m.indexOf('gif') >= 0) return 'gif';
+        if (m.indexOf('heic') >= 0) return 'heic';
+        if (m.indexOf('heif') >= 0) return 'heif';
+        return 'jpg';
+      }
+
+      function addImageNote(todoId) {
+        pickImageDataUrl().then(function (dataUrl) {
+          if (!dataUrl) return;
+          var t = todos.find(function (x) { return x.id === todoId; });
+          var label = t ? ('「' + t.content.slice(0, 12) + '」') : '这条待办';
+          toast('正在上传' + label + '的图片…');
+          // 原图直传：只有在拿不到原始字节（超限回退到压缩）时，原生才给 JPEG。
+          // 这里一律按 data URL 里的 mime 原样上传，不再二次压缩。
+          var packed;
+          try {
+            packed = dataUrlToBlob(dataUrl);
+          } catch (e) {
+            toast('图片读取失败，请重试');
+            return;
+          }
+          var out = { blob: packed.blob, size: packed.blob.size, dataUrl: dataUrl };
+          var uid = currentUser && currentUser.id;
+          if (!uid) { toast('登录状态已失效，请重新登录'); return; }
+          var path = cloud.storage.userPath(uid, 'todo-notes/' + uuid() + '.' + extOfMime(packed.mime));
+          return cloud.storage.upload(path, out.blob, { contentType: packed.mime, upsert: false })
+            .then(function (up) {
+              if (up.error) { toast(up.error.message || '图片上传失败'); return null; }
+              var stored = up.data || {};
+              var realPath = stored.path || stored.fullPath || path;
+              return cloud.database.from('todo_images')
+                .insert({
+                  todo_id: todoId,
+                  path: realPath,
+                  mime: packed.mime,
+                  size_bytes: out.size
+                })
+                .select()
+                .then(function (ins) {
+                  if (ins.error) { toast(ins.error.message || '备注保存失败'); return null; }
+                  var row = (ins.data && ins.data[0]) || { id: null, todo_id: todoId, path: realPath };
+                  var key = String(todoId);
+                  (imagesByTodo[key] = imagesByTodo[key] || []).push(row);
+                  signedUrlCache[realPath] = { url: out.dataUrl, at: Date.now() };
+                  render();
+                  notifyNative('image_added', { todoId: todoId, path: realPath });
+                  toast('图片备注已添加');
+                  return row;
+                });
+              })
+              .catch(function (e) {
+                toast((e && e.message) || '图片上传失败');
+              });
+        });
+      }
+
+      // 优先走原生选图（宿主 PhotoPicker）；无宿主时退回 <input type=file>。
+      function pickImageDataUrl() {
+        return Native.pickImage().then(function (dataUrl) {
+          if (dataUrl === null) {
+            // 没有原生桥（普通浏览器）：退回 input 选择器
+            return new Promise(function (resolve) {
+              var input = $('fileInput');
+              input.value = '';
+              var onChange = function () {
+                input.removeEventListener('change', onChange);
+                var file = input.files && input.files[0];
+                if (!file) { resolve(null); return; }
+                var reader = new FileReader();
+                reader.onload = function () { resolve(reader.result); };
+                reader.onerror = function () { resolve(null); };
+                reader.readAsDataURL(file);
+              };
+              input.addEventListener('change', onChange);
+              input.click();
+            });
+          }
+          if (!dataUrl) return null;   // 用户取消 / 宿主解码失败
+          return dataUrl;
+        });
+      }
+
+      // 压缩：最长边 1600px 的 JPEG，控制体积（原生相册大图直接上传会到 MB 级）。
+      function compressImage(dataUrl, maxEdge, quality) {
+        return new Promise(function (resolve, reject) {
+          var img = new Image();
+          img.onload = function () {
+            var w = img.naturalWidth || img.width;
+            var h = img.naturalHeight || img.height;
+            var scale = Math.min(1, maxEdge / Math.max(w, h));
+            var cw = Math.max(1, Math.round(w * scale));
+            var ch = Math.max(1, Math.round(h * scale));
+            var canvas = document.createElement('canvas');
+            canvas.width = cw; canvas.height = ch;
+            var ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, cw, ch);
+            canvas.toBlob(function (blob) {
+              if (!blob) { reject(new Error('图片处理失败')); return; }
+              resolve({ blob: blob, size: blob.size, dataUrl: canvas.toDataURL('image/jpeg', quality) });
+            }, 'image/jpeg', quality);
+          };
+          img.onerror = function () { reject(new Error('图片读取失败')); };
+          img.src = dataUrl;
+        });
+      }
+
+      // 存储里的图片是私有的，用签名 URL 访问（最长 3600 秒）。
+      function resolveImageUrl(path) {
+        if (!path) return Promise.resolve(null);
+        var cached = signedUrlCache[path];
+        if (cached && (Date.now() - cached.at) < 30 * 60 * 1000) return Promise.resolve(cached.url);
+        return Promise.resolve(cloud.storage.createSignedUrl(path, 3600)).then(function (res) {
+          if (res && res.error) return null;
+          var data = (res && res.data) || {};
+          var url = data.url || data.signedUrl || data.href || null;
+          if (url) signedUrlCache[path] = { url: url, at: Date.now() };
+          return url;
+        }).catch(function () { return null; });
+      }
+
+      /*
+       * 打开大图（2026-10-31 加了打开动画）。
+       *
+       * 顺序很讲究：先把 src 设上、等 `load` 事件到了再挂 `.loaded`（CSS 里
+       * `.loaded` 才把 opacity 从 0 拉到 1、把 scale 收回到 1）。原来的做法是
+       * 先 show 再等异步 URL 回来，中间那一瞬是"纯黑一片 + 突然跳出整张图"，
+       * 看着像卡了一下。
+       *
+       * 缩略图已经签过名，所以这里大多命中缓存——同步设 src 即可，动画照样走。
+       */
+      function openViewer(img) {
+        viewerImageId = img && img.id != null ? img.id : null;
+        var el = $('viewerImg');
+        var box = $('viewer');
+        el.classList.remove('loaded');
+        box.classList.add('show');
+        // 通知宿主"灯箱开着"——返回键从此只关灯箱（2026-10-30 需求 2）。
+        Native.setViewerOpen(true);
+
+        el.onload = function () { el.classList.add('loaded'); el.onload = null; };
+        el.onerror = function () {
+          // 签名过期：重新签一次再试
+          delete signedUrlCache[img.path];
+          resolveImageUrl(img.path).then(function (u) {
+            if (u) el.src = u; else el.removeAttribute('src');
+          });
+        };
+
+        var cached = img && img.path ? signedUrlCache[img.path] : null;
+        if (cached && (Date.now() - cached.at) < 30 * 60 * 1000) {
+          el.src = cached.url;
+          revealIfComplete(el);
+        } else {
+          el.removeAttribute('src');
+          resolveImageUrl(img.path).then(function (u) {
+            if (u) { el.src = u; revealIfComplete(el); }
+            else el.removeAttribute('src');
+          });
+        }
+      }
+
+      /**
+       * 图片其实已经在缓存里时（同一个 src 再赋一次不会触发 load 事件），
+       * 直接补上 `.loaded`，否则会停在 opacity:0 —— 屏幕上什么都没有。
+       */
+      function revealIfComplete(el) {
+        if (el.complete && el.naturalWidth > 0) {
+          el.classList.add('loaded');
+          el.onload = null;
+        }
+      }
+
+      function closeViewer() {
+        $('viewer').classList.remove('show');
+        var el = $('viewerImg');
+        el.classList.remove('loaded');
+        el.onload = null;
+        el.removeAttribute('src');
+        viewerImageId = null;
+        Native.setViewerOpen(false);
+      }
+
+      /* 删备注图：先本地移除 + 出「撤销」条，5 秒后才真删云端那行（2026-10-30 需求 3）。
+       *
+       * 和删待办同一套机制（见 `pendingImageDelete` 处的注释）：撤销窗口内
+       * 云端数据完全没动，所以撤销只是"把行放回本地数组再重绘"。
+       *
+       * 灯箱的垃圾桶按钮和缩略图长按菜单都走这里（2026-10-31 需求 4）。
+       */
+      function deleteViewerImage() {
+        if (viewerImageId == null) { closeViewer(); return; }
+        var id = viewerImageId;
+        closeViewer();
+        deleteImageRow(id);
+      }
+
+      /** 按图片行 id 删除（表里那条 `todo_images` 记录）。 */
+      function deleteImageRow(id) {
+        if (id == null) return;
+        flushPendingDelete();
+        var row = null;
+        var todoId = null;
+        Object.keys(imagesByTodo).forEach(function (k) {
+          imagesByTodo[k] = imagesByTodo[k].filter(function (x) {
+            if (x.id === id && !row) { row = x; todoId = k; return false; }
+            return x.id !== id;
+          });
+        });
+        render();
+        if (!row) return;   // 没找到对应行（列表已刷新过）：不做延迟删除，避免"删了个幽灵"
+        var p = { id: id, todoId: todoId, row: row, timer: null };
+        pendingImageDelete = p;
+        p.timer = setTimeout(function () {
+          if (pendingImageDelete !== p) return;
+          pendingImageDelete = null;
+          hideUndo();
+          commitImageDelete(p);
+        }, 5000);
+        showUndo('已删除 1 张备注图，可撤销');
+      }
+
+      /* ================================================================
+       * 个人简介
+       * ================================================================ */
+      function renderAvatar() {
+        var el = $('avatar');
+        el.innerHTML = '';
+        var name = profile.nickname ||
+          (currentUser && (currentUser.name || currentUser.email || currentUser.phone)) || '';
+        if (profile.avatar_path) {
+          var img = document.createElement('img');
+          img.alt = '头像';
+          resolveImageUrl(profile.avatar_path).then(function (u) {
+            if (u) img.src = u;
+          });
+          el.appendChild(img);
+        } else {
+          el.textContent = name ? name.charAt(0).toUpperCase() : '我';
+        }
+      }
+
+      /* 只负责把资料读出来画头像 —— **不弹个人简介**。
+       *
+       * 2026-10-29 修正：这里原先在两个分支里都调了 `openProfile()`，于是每次进页面
+       * 个人简介都会自己弹出来盖住列表（用户："进入今日待办时，不要默认点开个人信息"）。
+       * 个人简介现在只有一个入口：点右上角头像。 */
+      function loadProfile() {
+        var uid = currentUser && currentUser.id;
+        if (!uid) return Promise.resolve();
+        return Promise.resolve(cloud.database.from('user_profiles').select('*').eq('owner_id', uid))
+          .then(function (res) {
+            if (res.error || !res.data || !res.data.length) return;   // 没资料：保持"我"字头像即可
+            var row = res.data[0];
+            profile = {
+              nickname: row.nickname || '',
+              signature: row.signature || '',
+              avatar_path: row.avatar_path || ''
+            };
+            renderAvatar();
+            updateProfileStats();
+          }).catch(function () { /* 读资料失败不影响主流程 */ });
+      }
+
+      function saveProfile(patch) {
+        var uid = currentUser && currentUser.id;
+        if (!uid) return Promise.resolve();
+        var row = {
+          owner_id: uid,
+          nickname: patch.nickname != null ? patch.nickname : profile.nickname,
+          signature: patch.signature != null ? patch.signature : profile.signature,
+          avatar_path: patch.avatar_path != null ? patch.avatar_path : profile.avatar_path
+        };
+        function fallback() {
+          return cloud.database.from('user_profiles').update(row).eq('owner_id', uid).select()
+            .then(function (res) {
+              if (res.error || !res.data || !res.data.length) {
+                return cloud.database.from('user_profiles').insert(row).select();
+              }
+              return res;
+            });
+        }
+        return Promise.resolve(cloud.database.from('user_profiles')
+          .upsert(row, { onConflict: 'owner_id' })).then(function (res) {
+            if (res.error) return fallback();
+            return res;
+          }).catch(function () { return fallback(); })
+          .then(function () {
+            profile.nickname = row.nickname;
+            profile.signature = row.signature;
+            profile.avatar_path = row.avatar_path;
+            renderAvatar();
+            renderProfileSheet();
+            notifyNative('profile_updated', { nickname: row.nickname });
+          });
+      }
+
+      function openProfile() {
+        var uid = currentUser && currentUser.id;
+        var account = currentUser ? (currentUser.phone || currentUser.email) : '';
+        $('profileName').textContent = profile.nickname || (currentUser && currentUser.name) || '我';
+        $('profileSign').textContent = profile.signature || '还没有个性签名';
+        $('profileAccount').textContent = account ? maskAccount(account) : '—';
+        $('profileUid').textContent = uid || '—';
+        $('profileJoined').textContent = '—';
+        $('profileAvatar').innerHTML = '';
+        if (profile.avatar_path) {
+          var img = document.createElement('img');
+          img.alt = '头像';
+          resolveImageUrl(profile.avatar_path).then(function (u) { if (u) img.src = u; });
+          $('profileAvatar').appendChild(img);
+        } else {
+          var name = profile.nickname || (currentUser && currentUser.name) || '我';
+          $('profileAvatar').textContent = name.charAt(0).toUpperCase();
+        }
+        updateProfileStats();
+        $('profileMask').classList.add('show');
+      }
+
+      function updateProfileStats() {
+        if (!$('pStatTotal')) return;
+        var done = todos.filter(function (t) { return t.completed; }).length;
+        var imgCount = 0;
+        Object.keys(imagesByTodo).forEach(function (k) { imgCount += (imagesByTodo[k] || []).length; });
+        $('pStatTotal').textContent = todos.length;
+        $('pStatDone').textContent = done;
+        $('pStatImages').textContent = imgCount;
+      }
+
+      function renderProfileSheet() {
+        $('profileName').textContent = profile.nickname || (currentUser && currentUser.name) || '我';
+        $('profileSign').textContent = profile.signature || '还没有个性签名';
+      }
+
+      function pickAvatar() {
+        pickImageDataUrl().then(function (dataUrl) {
+          if (!dataUrl) return;
+          compressImage(dataUrl, 512, 0.85).then(function (out) {
+            var uid = currentUser && currentUser.id;
+            if (!uid) return;
+            var path = cloud.storage.userPath(uid, 'avatars/' + uuid() + '.jpg');
+            return cloud.storage.upload(path, out.blob, { contentType: 'image/jpeg', upsert: false })
+              .then(function (up) {
+                if (up.error) { toast(up.error.message || '头像上传失败'); return; }
+                var stored = up.data || {};
+                var realPath = stored.path || stored.fullPath || path;
+                signedUrlCache[realPath] = { url: out.dataUrl, at: Date.now() };
+                return saveProfile({ avatar_path: realPath });
+              })
+              .then(function () { toast('头像已更新'); });
+          }).catch(function (e) { toast((e && e.message) || '头像处理失败'); });
+        });
+      }
+
+      function signOut() {
+        /* 还没落地的删除先结掉，别因为退出把一次"已删"留在半路。 */
+        flushPendingDelete();
+        /* 一个账号：网页退出 = 整个应用退出（2026-10-29）。 */
+        Native.signOut();
+        clearLocalSession();
+        cloud.auth.signOut().then(exitApp).catch(function () { exitApp(); });
+      }
+
+      /* ================================================================
+       * 启动
+       * ================================================================ */
+      function bind() {
+        $('wbBtn').addEventListener('click', signInWithWorkBuddy);
+        $('wxBtn').addEventListener('click', signInWithWechat);
+        $('tabPhone').addEventListener('click', function () { switchTab('phone'); });
+        $('tabEmail').addEventListener('click', function () { switchTab('email'); });
+        $('codeBtn').addEventListener('click', sendCode);
+        $('loginBtn').addEventListener('click', submitLogin);
+        $('pwdEntry').addEventListener('click', showPasswordLogin);
+        $('otpEntry').addEventListener('click', showOtpLogin);
+        $('pwdLoginBtn').addEventListener('click', submitPasswordLogin);
+        $('addBtn').addEventListener('click', addTodo);
+        /* 退出登录：二次确认，且用页面内的卡片（见 confirmDialog），不用系统弹窗。 */
+        $('logoutBtn').addEventListener('click', function () {
+          confirmDialog({
+            title: '退出登录？',
+            text: '退出后打卡也会一起退出登录，下次进待办要重新收验证码。',
+            okText: '退出登录',
+            danger: true
+          }).then(function (ok) { if (ok) signOut(); });
+        });
+        $('nativeLogin').addEventListener('click', function () { nativeOneTapLogin(false); });
+        $('confirmCancel').addEventListener('click', function () { closeConfirm(false); });
+        $('confirmOk').addEventListener('click', function () { closeConfirm(true); });
+        $('confirmMask').addEventListener('click', function (e) {
+          if (e.target === $('confirmMask')) closeConfirm(false);
+        });
+        $('undoBtn').addEventListener('click', undoDelete);
+        $('newTodo').addEventListener('keydown', function (e) { if (e.key === 'Enter') addTodo(); });
+
+        $('lastAccountUse').addEventListener('click', function () {
+          var last = null;
+          try { last = JSON.parse(localStorage.getItem(LAST_ACCOUNT_KEY) || 'null'); } catch (e) { }
+          if (last && last.value) $('accountInput').value = last.value;
+        });
+
+        Array.prototype.forEach.call(document.querySelectorAll('#filterBar .chip'), function (chip) {
+          chip.addEventListener('click', function () {
+            Array.prototype.forEach.call(document.querySelectorAll('#filterBar .chip'), function (c) {
+              c.classList.remove('active');
+            });
+            chip.classList.add('active');
+            filter = chip.getAttribute('data-filter');
+            render();
+          });
+        });
+
+        $('avatar').addEventListener('click', function () { openProfile(); });
+        $('profileClose').addEventListener('click', function () { $('profileMask').classList.remove('show'); });
+        $('profileMask').addEventListener('click', function (e) {
+          if (e.target === $('profileMask')) $('profileMask').classList.remove('show');
+        });
+        $('profileNameEdit').addEventListener('click', function () {
+          $('profileEditArea').classList.remove('hidden');
+          $('profileNameInput').value = profile.nickname || '';
+          $('profileSignInput').value = profile.signature || '';
+        });
+        $('profileEditCancel').addEventListener('click', function () {
+          $('profileEditArea').classList.add('hidden');
+        });
+        $('profileEditSave').addEventListener('click', function () {
+          var name = $('profileNameInput').value.trim();
+          var sign = $('profileSignInput').value.trim();
+          saveProfile({ nickname: name, signature: sign }).then(function () {
+            $('profileEditArea').classList.add('hidden');
+            toast('资料已保存');
+          });
+        });
+        $('profileAvatar').addEventListener('click', pickAvatar);
+        $('profileAvatarBtn').addEventListener('click', pickAvatar);
+        $('profileLogout').addEventListener('click', function () {
+          // 与顶栏「退出」同一套确认（个人简介里也有一处退出，别让它绕过去）。
+          $('profileMask').classList.remove('show');
+          confirmDialog({
+            title: '退出登录？',
+            text: '退出后打卡也会一起退出登录，下次进待办要重新收验证码。',
+            okText: '退出登录',
+            danger: true
+          }).then(function (ok) {
+            if (ok) signOut();
+            else $('profileMask').classList.add('show');   // 取消 → 回到简介卡片
+          });
+        });
+
+        $('viewerClose').addEventListener('click', closeViewer);
+        $('viewerDelete').addEventListener('click', deleteViewerImage);
+        // 点面板外的遮罩收起（与个人简介同一套手感）。
+        $('actionMask').addEventListener('click', function (e) {
+          if (e.target === $('actionMask')) closeImageActions();
+        });
+
+        /* ── 灯箱：点空白退出 + 长按弹「保存 / 分享」（2026-10-30 需求 1、2；
+         *    2026-10-31 需求 4 改成选项面板）────────────────────────────────
+         *
+         * ① **点空白退出**：`#viewer` 是铺满全屏的遮罩，图片只是它中间的一个子元素。
+         *    点在图片、顶部按钮、底部提示之外的地方（= 四周黑底）都算"点空白"，
+         *    直接关闭。用 `closest` 判归属，比逐个比较 target 稳（提示文字里将来
+         *    加个 <span> 也不会漏判）。
+         *
+         * ② **长按**：WebView 里长按 <img> 不会弹系统菜单（页面还关掉了
+         *    contextmenu，否则长按会误触文字选择），所以这里自己实现长按：
+         *    按下起定时器，600ms 内没抬起/没移动就弹动作面板（保存到相册 / 分享）；
+         *    同时兜住桌面浏览器的 contextmenu。
+         */
+        (function bindViewerGestures() {
+          var viewer = $('viewer');
+          if (!viewer) return;
+
+          viewer.addEventListener('click', function (e) {
+            var t = e.target;
+            if (!t || !t.closest) return;
+            // 图片、按钮、提示条上的点击都不算"点空白"。
+            if (t.closest('#viewerImg') || t.closest('.viewer-bar') || t.closest('.viewer-tip')) return;
+            closeViewer();
+          });
+
+          var img = $('viewerImg');
+          var timer = null;
+          var startX = 0, startY = 0;
+
+          function cancel() {
+            if (timer) { clearTimeout(timer); timer = null; }
+          }
+
+          function saveCurrent() {
+            openViewerActions();
+          }
+
+          if (img) {
+            img.addEventListener('touchstart', function (e) {
+              var touch = e.touches && e.touches[0];
+              startX = touch ? touch.clientX : 0;
+              startY = touch ? touch.clientY : 0;
+              cancel();
+              timer = setTimeout(function () { timer = null; saveCurrent(); }, 600);
+            }, { passive: true });
+
+            img.addEventListener('touchmove', function (e) {
+              var touch = e.touches && e.touches[0];
+              if (!touch) return;
+              // 手指移动超过 10px 当作滑动/缩放，不算长按。
+              if (Math.abs(touch.clientX - startX) > 10 || Math.abs(touch.clientY - startY) > 10) cancel();
+            }, { passive: true });
+
+            img.addEventListener('touchend', cancel);
+            img.addEventListener('touchcancel', cancel);
+            // 桌面浏览器 / 部分 WebView 的长按会走 contextmenu。
+            img.addEventListener('contextmenu', function (e) {
+              e.preventDefault();
+              saveCurrent();
+            });
+          }
+        })();
+
+        /* 宿主返回键 → 关灯箱（2026-10-30 需求 2）。宿主注入 JS 调这里，
+         * 而不是自己去改 DOM：关闭还要复位 viewerImageId、清 src。 */
+        window.__cimTodoCloseViewer = function () {
+          if ($('viewer').classList.contains('show')) closeViewer();
+        };
+
+        // ── 键盘弹出后，把弹窗里的操作按钮滚回可视区（2026-10-29）──────────────
+        //
+        // 现象：弹窗里点输入框 → 键盘弹起 → 宿主把 WebView 收缩 → 弹窗只剩上半截，
+        // 底下「取消 / 保存」被挤到可视区外，用户说"点不到"。
+        // 浏览器的自动滚动只保证**焦点元素本身**露出来，不管它下面的按钮；
+        // 试过 `scroll-padding-bottom`（CSS），触摸聚焦这条路径不认（实测 scrollTop
+        // 只补到刚好露出输入框）。所以在 focusin 之后自己补差额：
+        // 只补"操作行底部超出可视区"的那一段，输入框尽量留在屏上。
+        document.addEventListener('focusin', function (e) {
+          var el = e.target;
+          if (!el || !el.tagName || !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+          var sheet = el.closest ? el.closest('.sheet') : null;
+          if (!sheet) return;
+          // 键盘弹起 + 宿主 inset 派发要一小段时间，等落定再量，否则量到的是旧高度。
+          setTimeout(function () {
+            var row = sheet.querySelector('.profile-actions') || sheet.lastElementChild;
+            if (!row) return;
+            var box = sheet.getBoundingClientRect();
+            var deficit = row.getBoundingClientRect().bottom - (box.bottom - 12);
+            if (deficit > 0) sheet.scrollTop += deficit;
+          }, 320);
+        });
+      }
+
+      // 回到前台时校验一次会话：令牌过期就续期，彻底失效才回登录页。
+      function checkSession() {
+        if (!cloud) return;
+        Promise.resolve(cloud.auth.getSession()).then(function (s) {
+          if (s && s.data) {
+            backupSession(s.data);
+            return;
+          }
+          if (currentUser) {
+            exitApp('登录状态已过期，请重新登录');
+            Native.clearSession();
+          }
+        }).catch(function () { /* 网络抖动不踢人 */ });
+      }
+
+      function boot() {
+        bind();
+        renderLastAccount();
+        if (typeof WorkBuddyCloud === 'undefined') {
+          $('loginView').innerHTML = '<div class="brand"><h1>加载失败</h1><p>SDK 未能加载，请刷新页面重试。</p></div>';
+          return;
+        }
+        cloud = WorkBuddyCloud.createWorkBuddyCloud({
+          endpoint: publicConfig.endpoint,
+          oauthRelayBaseUrl: publicConfig.oauthRelayBaseUrl,
+          publishableKey: publicConfig.publishableKey
+        });
+        window.__todo = { cloud: cloud, publicConfig: publicConfig };
+
+        // 对外暴露给宿主的稳定接口（原生可直接调用）
+        window.__todoApp = {
+          version: 2,
+          api: {
+            reload: loadTodos,
+            getTodos: function () { return todos; },
+            signOut: signOut,
+            openProfile: openProfile,
+            notify: notifyNative
+          }
+        };
+
+        restoreSession();
+        refreshNativeLoginButton();
+
+        restoreAuth().then(function (handled) {
+          if (handled) return null;
+          return cloud.auth.getSession().then(function (s) {
+            if (s && s.data) {
+              backupSession(s.data);
+              enterApp(s.data.user);
+              return true;
+            }
+            /* SDK 自己没读到会话，但原生那边可能已经登录（打卡登录过）——
+               静默用一键登录补一次，用户就不该再看到一个登录页。 */
+            return nativeOneTapLogin(true);
+          }).catch(function () { return nativeOneTapLogin(true); });
+        }).then(function () {
+          // 兜底：自动补登也没成，就按"原生有没有会话"决定露不露「一键登录」按钮。
+          refreshNativeLoginButton();
+          cloud.auth.onAuthStateChange(function (event) {
+            if (event === 'SIGNED_OUT') exitApp();
+          });
+        });
+
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) checkSession();
+        });
+        window.addEventListener('pageshow', function () { checkSession(); });
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot);
+      } else {
+        boot();
+      }
+    })();
+  </script>
+</body>
+</html>

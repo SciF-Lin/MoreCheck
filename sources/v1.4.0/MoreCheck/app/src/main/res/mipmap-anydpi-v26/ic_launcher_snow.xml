@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    「图标更改」内置图标之一：雪杉（复用「一个木函」Logo 家族素材，本轮需求 8/11）。
+
+    素材来源、裁切方式与授权口径与 `ic_launcher_pine.xml` 完全一致（同一批三张之一，
+    源文件 `E:\download\app\A_Tree\exported_images\icon_04_432x432.png`），不再重复。
+
+    ## 背景 `#004D40`（Teal 900）的取值依据（**量过前景才定的**）
+
+    本套前景的杉树本体是**米白色**（平均 RGB 213,220,227、亮度 225，比 tree 那套还亮），
+    因此背景必须**深**。取 `#004D40` 的理由：
+    - 与 tree 套背景同色，但前景图案不同（tree 是青绿渐变的密枝树形，本套是米白的
+      疏枝树形），两套在桌面上仍可区分；
+    - 复用已有色值而不是新造一个"深青 2 号"：`ic_launcher_tree_background` 已经存在，
+      两套共用一个 `@color` 资源即可（下面 colors.xml 里 snow 直接引用它），
+      颜色总数不膨胀。对比度实测 **8.6 : 1**（米白比 tree 的青绿更亮，比 tree 的 7.29 更高）。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_snow_background" />
+    <foreground android:drawable="@drawable/ic_fore_snow" />
+</adaptive-icon>

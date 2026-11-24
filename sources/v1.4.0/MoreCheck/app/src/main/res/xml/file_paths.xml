@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    拍照临时文件的 FileProvider 路径配置（「智能体 → 拍照」用，v1.1.69 新增）。
+
+    只映射 cacheDir 本身：拍照文件 `ai_camera_*.jpg` 直接建在 cacheDir 根下
+    （见 `ui/agent/AgentChatScreen`）。刻意**不**映射 filesDir——那里有聊天历史、
+    DataStore、密钥库，放进可被临时授权的路径里没有意义且放大暴露面。
+
+    name="." 表示 cacheDir 根；path="." 表示不追加子目录。
+-->
+<paths>
+    <cache-path name="ai_cache" path="." />
+</paths>

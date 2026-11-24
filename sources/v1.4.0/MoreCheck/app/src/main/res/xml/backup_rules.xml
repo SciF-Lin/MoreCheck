@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    系统自动备份排除清单（Android 11 及以下读取本文件，Android 12 起读
+    data_extraction_rules.xml，两份必须同步维护）。
+
+    背景：AndroidManifest 的 allowBackup="true" 会让系统把应用数据备份到
+    设备厂商 / Google 的云备份，也允许设备间迁移直接拷贝数据。应用里
+    有三类文件属于凭据，不应离开本机：
+
+    1. bili_login_session.xml   B站登录 Cookie（SESSDATA 等，明文）
+    2. cloud_session            云同步会话（accessToken / refreshToken / 手机号）
+    3. ai_chat_settings         AI 服务商的自填 API Key
+
+    已知残留（有意保留，见 docs/reviews/优化建议-2026-11-04.md）：
+    开屏手势的盐与加盐 SHA-256 哈希在主 settings.preferences_pb 里，
+    与全部设置同文件，排除它会让换机恢复丢掉全部设置。哈希原文不可逆，
+    备份存储受用户系统账号保护，故暂保留；若要根治需把锁屏键拆独立
+    DataStore 文件（schema 无关，纯存储拆分）。
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="bili_login_session.xml" />
+    <exclude domain="sharedpref" path="todo_web_session.xml" />
+    <exclude domain="file" path="datastore/cloud_session.preferences_pb" />
+    <exclude domain="file" path="datastore/ai_chat_settings.preferences_pb" />
+    <exclude domain="file" path="datastore/kugou_session.preferences_pb" />
+</full-backup-content>

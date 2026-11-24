@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    数据提取规则（Android 12 及以上生效，Android 11 及以下读 backup_rules.xml，
+    两份必须同步维护）。
+
+    cloud-backup：系统云备份（厂商云 / Google Drive）。
+    device-transfer：新旧设备直接迁移（换机助手一类）。
+
+    排除的都是凭据：B站 Cookie、云同步会话（含 refresh token 与手机号）、
+    AI 服务商 API Key、旧版待办网页会话。凭据文件不随备份或迁移离开本机，
+    新设备上由用户重新登录。锁屏手势哈希仍在主 settings 文件内随备份迁移，
+    残留风险与根治方案见 docs/reviews/优化建议-2026-11-04.md。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="bili_login_session.xml" />
+        <exclude domain="sharedpref" path="todo_web_session.xml" />
+        <exclude domain="file" path="datastore/cloud_session.preferences_pb" />
+        <exclude domain="file" path="datastore/ai_chat_settings.preferences_pb" />
+        <exclude domain="file" path="datastore/kugou_session.preferences_pb" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="bili_login_session.xml" />
+        <exclude domain="sharedpref" path="todo_web_session.xml" />
+        <exclude domain="file" path="datastore/cloud_session.preferences_pb" />
+        <exclude domain="file" path="datastore/ai_chat_settings.preferences_pb" />
+        <exclude domain="file" path="datastore/kugou_session.preferences_pb" />
+    </device-transfer>
+</data-extraction-rules>

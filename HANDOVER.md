@@ -18,7 +18,7 @@
 
 `E:\download\app\MoreCheck` 是一个 **Android 打卡应用**的公开工作区：Kotlin + Jetpack Compose，本地优先（不登录也能用），登录后可云同步。应用名 **MoreCheck**，包名 `com.morecheck`。
 
-目录里同时放着：四个可构建的源码快照（`sources/v1.1.2`、`v1.1.50`、`v1.1.70`、`v1.1.90`）、对应已签名安装包（`dist/`）、图标与二维码设计源（`design/`）、构建与发布文档。
+目录里同时放着：五个可构建的源码快照（`sources/v1.1.2`、`v1.1.50`、`v1.1.70`、`v1.1.90`、`v1.4.0`）、对应已签名安装包（`dist/`）、图标与二维码设计源（`design/`）、构建与发布文档。
 
 **这不是一个"一版代码持续迭代"的仓库**，而是**按上游版本逐版快照**：每个 `sources/vX.Y.Z/MoreCheck/` 都是独立可构建的完整 Gradle 工程，改哪个版本就进哪个目录，互不影响。
 
@@ -36,35 +36,36 @@
 | 签名 DN | `CN=MoreCheck, OU=MoreCheck, O=MoreCheck, L=Beijing, ST=Beijing, C=CN` | `CN=CheckInMate, OU=Personal, O=CheckInMate, L=Local, ST=Local, C=CN` |
 | 证书 SHA-256 | `d3da0ec0b0fc3a91de57ba783af5e9a4dcf25f5fdcb403941a77be461c00d996` | `8fca12137940e4dd9e97d11a6366c03c6b1f7c713ecaacc35f79667f9e955e15` |
 | 云端 | `https://morecheck.app.workbuddy.host`（自有云环境） | 上游自己的云环境 |
-| 版本号 | 沿用上游 tag：1.1.2 / 1.1.50 / 1.1.70 / 1.1.90 | 1.1.x → 1.4.0 |
+| 版本号 | 沿用上游 tag：1.1.2 / 1.1.50 / 1.1.70 / 1.1.90 / 1.4.0 | 1.1.x → 1.4.0 |
 
 > 本文会随公开仓库一起发布。上游是私有仓库，外部点上面的 CheckInMate 链接会 404；如果不希望公开这层关系，推送前删掉表中那一行即可，不影响构建与发布。
 
 **三条红线：**
 
-1. **签名不能换。** 已发布的四个包共用 `keystore/morecheck.jks`。换密钥 = 老用户无法覆盖升级，只能卸载重装（数据全丢）。
+1. **签名不能换。** 已发布的五个包共用 `keystore/morecheck.jks`。换密钥 = 老用户无法覆盖升级，只能卸载重装（数据全丢）。
 2. **包名不能改成 `com.checkinmate`，也不能让两者互相覆盖安装。** 包名与签名任意一项不同就装不上去，这是有意的隔离。
-3. **上游的私有资产不进这个公开仓库**：`checkinmate.jks`、上游的 `docs/` 与 `HANDOVER.md`、内部评审/历史文档、`dist/` 交付说明。`sources/v1.2.0` 与 `sources/v1.4.0` 是上游原样快照（含各自 `.git` 和密钥），已加入 `.gitignore`，**只在本机参考，不要 `git add`**。
+3. **上游的私有资产不进这个公开仓库**：`checkinmate.jks`、上游的 `docs/` 与 `HANDOVER.md`、内部评审/历史文档、`dist/` 交付说明。`sources/v1.2.0` 仍是上游原样快照（含 `.git` 和密钥），已加入 `.gitignore`，**只在本机参考**；`sources/v1.4.0/MoreCheck` 已完成品牌改造并公开，其上游附带文档/脚本/快照目录仍不入库。
 
 > 版本号为什么从 1.1.x 开始、而不是 1.0.0：沿用上游的版本序列与 `versionCode`（4 / 10 / 26 / 39），这样两边的更新日志、issue 描述能对得上。发新版时在上游 tag 基础上继续，例如上游 1.2.0 → MoreCheck 1.2.0。
 
-## 3. 当前状态（2026-11-22）
+## 3. 当前状态（2026-11-24）
 
 | 项 | 值 |
 | --- | --- |
-| 最新版本 | **1.1.90**（`versionCode 39`，功能最完整，README 标"推荐"） |
-| 同仓其他版本 | 1.1.70（26）、1.1.50（10）、1.1.2（4） |
+| 最新版本 | **1.4.0**（`versionCode 69`，功能最完整，README 标"推荐"） |
+| 同仓其他版本 | 1.1.90（39）、1.1.70（26）、1.1.50（10）、1.1.2（4） |
 | 包名 / 最低系统 | `com.morecheck` / Android 10（API 29），targetSdk 36 |
-| 安装包 | `dist/MoreCheck-<版本>.apk`，四个包同签名，可互相覆盖升级 |
+| 安装包 | `dist/MoreCheck-<版本>.apk`，五个包同签名，可互相覆盖升级 |
 | 云环境 | `https://morecheck.app.workbuddy.host`（应用 id `wbapp_2KA020VX3CkCXSDkX332mn`） |
 | 检查更新 | 跳转 <https://github.com/SciF-Lin/MoreCheck/releases>（页面已有内容） |
-| GitHub Release | **四版均已发布**（2026-11-22 01:34~01:46），`v1.1.90` 标为 Latest，均带 APK 资产；发版走 `gh release`，见 7.2 |
+| GitHub Release | **五版均已发布**（1.1.x 四版于 2026-11-22，`v1.4.0` 于 2026-11-24），`v1.4.0` 标为 Latest，均带 APK 资产；发版走 `gh release`，见 7.2 |
 | 云端发布索引 | 已建 `app_releases` 表，但客户端还没读，见待办 P0-2 |
 
 `dist/` 里是**工作区当前包**，GitHub Release 上是**已发布资产**。两者在 1.1.2 / 1.1.70 / 1.1.90 上不一致，原因见下方说明，别当成抄错：
 
 | 版本 | `dist/` 当前文件 | GitHub Release 资产（已发布） |
 | --- | --- | --- |
+| 1.4.0 | 12.00 MB · `4ebd4e13ca4098b82567fe40e0bbaafeda44fc30af4d5b3448ba7d698b1abbfd` | 12.00 MB · `4ebd4e13ca4098b82567fe40e0bbaafeda44fc30af4d5b3448ba7d698b1abbfd` |
 | 1.1.90 | 7.20 MB · `a57beaa086ba58bdd173bed9916d778ff424c9001c8c986091a0442d2ed543a9` | 7.19 MB · `a57beaa086ba58bdd173bed9916d778ff424c9001c8c986091a0442d2ed543a9` |
 | 1.1.70 | 6.47 MB · `3f89aadc36c59e6a0b857abec366d56f3497a02fbadce108d167345ebc2486e2` | 6.45 MB · `3f89aadc36c59e6a0b857abec366d56f3497a02fbadce108d167345ebc2486e2` |
 | 1.1.50 | 3.15 MB · `8fcedac5f11a063a81eb17f6456c9929707a6f498eda22b66f561747c1116a08` | 3.15 MB · `8fcedac5f11a063a81eb17f6456c9929707a6f498eda22b66f561747c1116a08` |
@@ -322,9 +323,9 @@ sha256sum app-release.apk                                    # 记下哈希
 ### 7.3 发布纪律
 
 - **一个版本号只对应一个包**。同版本修 bug 就重出并替换同名资产与 `dist` 文件，不新造 tag。
-- **四个版本同包名同签名**，用户可跨版本覆盖升级；任何一项变了就必须在 README 里写清"需卸载重装"。
+- **五个版本同包名同签名**，用户可跨版本覆盖升级；任何一项变了就必须在 README 里写清"需卸载重装"。
 - 推代码与发 Release 尽量同批完成，避免"代码在线上、包没地方下"。
-- 发版前把 `sources/v1.2.0`、`v1.4.0` 确认没被 `git add`（`git status --short` 里不应出现）。
+- 发版前确认 `sources/v1.2.0` 没被 `git add`；`sources/v1.4.0/MoreCheck` 应作为干净工程提交，其上游附带目录不应出现。
 
 ## 8. 硬纪律与踩过的坑
 
@@ -337,7 +338,7 @@ sha256sum app-release.apk                                    # 记下哈希
 7. 云端单会话制，新登录踢设备；调试优先复用已登录会话。
 8. `rebrand.py` 会连域名一起替换——拉新版本后必须人工核对 `CloudConfig`。
 9. 模拟器开着别构建。
-10. 别把上游私有资产（keystore、docs、HANDOVER、dist 说明）带进公开仓库；`sources/v1.2.0`、`v1.4.0` 只在本机。
+10. 别把上游私有资产（keystore、docs、HANDOVER、dist 说明）带进公开仓库；`sources/v1.2.0` 只在本机，`sources/v1.4.0` 只提交干净的 `MoreCheck/` 工程。
 11. 新增联网能力要考虑隐私政策与权限文案，本应用**不加统计/广告 SDK**。
 12. 发布前确认 `README.md` 的哈希与实际文件一致（用 `sha256sum` 复核，别手抄）。
 

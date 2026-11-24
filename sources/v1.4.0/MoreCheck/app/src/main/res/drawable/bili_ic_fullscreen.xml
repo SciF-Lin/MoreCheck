@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24.000000dp"
+    android:height="24.000000dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <!-- 2026-11-24：四角 L 形笔画 2→3 单位，白线压在亮色画面上更清楚。 -->
+  <path android:fillColor="#ffffffff"
+        android:pathData="M7.5,14 L5,14 L5,18.5 L9.5,18.5 L9.5,16 L7.5,16 Z M5,9.5 L7.5,9.5 L7.5,6.5 L9.5,6.5 L9.5,5 L5,5 Z M17,16 L14.5,16 L14.5,18.5 L19,18.5 L19,14 L16.5,14 L16.5,16 Z M14.5,5 L14.5,7.5 L16.5,7.5 L16.5,9.5 L19,9.5 L19,5 Z" />
+</vector>

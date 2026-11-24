@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    「图标更改」新增：对勾 ✓ 那套自适应图标（v1.1.69 需求 2b）。
+
+    ## 与既有三套彩色图标的区别
+
+    蓝 / 紫 / 橙三套 = **同一张前景 PNG + 换背景色**；
+    本套及同批新增的三套 = **各自一个手绘矢量前景 + 各自一个背景色**。
+    因此本文件多了一行 `foreground` 指向 `@drawable/ic_icon_fore_check`，
+    而不是复用的 `@drawable/ic_launcher_foreground`。
+
+    ## 为什么前景是 108×108 的矢量、而不是新做一张 PNG
+
+    自适应图标的前景图层固定按 **108×108** 铺开，被桌面遮罩切掉边缘后，
+    **任何遮罩下都可见**的只有中心直径 66 的区域。
+    矢量图在 108 坐标系里可以精确地把图形压在安全圆内（见那个 drawable 的注释），
+    而且从 24dp 到 512dp 任意尺寸都清晰；PNG 则要按 dpi 出多份。
+
+    ## 背景色
+
+    `@color/ic_launcher_check_background`（`#00ACC1`），取值理由见 `values/colors.xml`。
+    前景是纯白，因此这里刻意选深一档的青、而不是更亮的青。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_check_background" />
+    <foreground android:drawable="@drawable/ic_icon_fore_check" />
+</adaptive-icon>

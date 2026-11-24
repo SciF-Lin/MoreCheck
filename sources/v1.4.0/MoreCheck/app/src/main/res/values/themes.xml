@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        冷启动时的窗口主题。
+
+        ⚠️ 这里**必须**显式指定 `android:windowBackground`，且取值要与 Compose 的页面底色一致
+        （浅色 #EDEDED / 深色 #111111，见 values/colors.xml 与 values-night/colors.xml）。
+
+        为什么不能沿用原来的 `android:Theme.Material.Light.NoActionBar`：
+        那个父主题的窗口底色是**白色**。冷启动时系统先画窗口背景，Compose 首帧到达后才盖上页面，
+        于是深色模式下会「先白屏、再快速转黑」（需求 bug2）。
+        父主题仍用 Light（保证浅色下状态栏图标等默认值正确），只覆盖 windowBackground 即可。
+
+        `windowIsTranslucent` / `windowShowWallpaper` 都不需要：
+        我们要的就是一层与页面同色的实心底，这样无论深浅色都不会闪。
+    -->
+    <style name="Theme.MoreCheck" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+</resources>

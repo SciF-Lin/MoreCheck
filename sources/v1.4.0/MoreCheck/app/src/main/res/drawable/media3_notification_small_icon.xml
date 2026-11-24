@@ -1,0 +1,20 @@
+<!--
+    通知栏小图标（2026-11-08，音乐后台播放）。
+
+    名字 **必须是** `media3_notification_small_icon`：media3 的
+    `DefaultMediaNotificationProvider` 按这个名字去应用资源里找小图标，
+    找到就用、找不到就用应用图标（带背景的彩色方图，在状态栏上很难看）。
+    这一版它在 Builder 上没有 `setSmallIcon`，只能靠资源名约定。
+
+    图形与「每日提醒」用的 `ic_stat_check` 不同：这里是音符（识别度更高），
+    状态栏图标必须是**纯白剪影**，所以 fillColor 固定 #FFFFFF。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,3v10.55A4,4 0,1 0,14 17V7h4V3h-6z" />
+</vector>

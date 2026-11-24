@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "updatedAt": "2026-11-15T23:36:33+0800",
+  "releases": [
+    {
+      "version": "1.4.0",
+      "versionCode": 69,
+      "fileName": "MoreCheck-1.4.0.apk",
+      "objectPath": "shared/2112910697389096960/apk/MoreCheck-1.4.0.apk",
+      "sizeBytes": 12034938,
+      "sha256": "",
+      "uploadedAt": "2026-11-15T23:36:33+0800",
+      "notes": "正式版：官网标题栏更紧凑、内嵌网页视口兜底，含 1.2.0 之后全部功能与修复"
+    },
+    {
+      "version": "1.2.0",
+      "versionCode": 50,
+      "fileName": "MoreCheck-1.2.0.apk",
+      "objectPath": "shared/2112910697389096960/apk/MoreCheck-1.2.0.apk",
+      "sizeBytes": 8786478,
+      "sha256": "4338c1776668092b133e2d5efd1cebf592eaa3dcd5c76b8bb94d9202ad5c7c70",
+      "uploadedAt": "2026-10-31T22:19:42+0800",
+      "notes": "首个正式版：云同步修复、待办图片原图与长按保存、今日待办网页版、安装包下载页、计时页居中"
+    },
+    {
+      "version": "1.1.90",
+      "versionCode": 39,
+      "fileName": "MoreCheck-1.1.90.apk",
+      "objectPath": "shared/2112910697389096960/apk/MoreCheck-1.1.90.apk",
+      "sizeBytes": 7644974,
+      "sha256": "9c3a5b9db9f4b1074bf209594df420d609f9f34c279c14e658342017997f5f8a",
+      "uploadedAt": "2026-10-31T18:33:25+0800",
+      "notes": "首个正式版：打卡、任务提醒、统计日历、数据备份与云同步"
+    }
+  ]
+}

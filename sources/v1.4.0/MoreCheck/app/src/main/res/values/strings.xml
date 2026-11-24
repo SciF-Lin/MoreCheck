@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">MoreCheck</string>
+    <string name="widget_checkin_title">今日打卡</string>
+    <string name="widget_checkin_description">在桌面查看今日完成数，一键完成第一个未打卡任务</string>
+    <string name="widget_checkin_hint">点下方按钮补上今天的第一卡</string>
+    <string name="widget_checkin_button">一键打卡</string>
+    <string name="widget_checkin_all_done">今天全部完成啦</string>
+    <string name="widget_checkin_no_task">还没有任务</string>
+
+    <!-- 音乐后台播放的通知渠道名（2026-11-08）。渠道创建后名字由系统记住，改这里只影响新建渠道。 -->
+    <string name="music_playback_channel">音乐播放</string>
+</resources>
